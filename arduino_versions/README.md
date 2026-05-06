@@ -1,75 +1,143 @@
-# Arquivos Arduino IDE (.ino) - ESP32-C3 Joystick ESP-NOW
+# ESP32 Joystick Control System - Arduino IDE
 
-Esta pasta contém versões separadas do código para uso no **Arduino IDE**, independente do PlatformIO.
+Sistema de controle remoto usando ESP32-C3 e ESP-NOW, com versões para diferentes níveis de complexidade.
 
-## 📁 **Estrutura de Pastas (Arduino IDE):**
+## 🎯 Duas Versões Disponíveis
 
-### 1. **`transmit/`** - Pasta do Transmissor (Joystick)
-- **Arquivo**: `transmit/transmit.ino` 
-- **Função**: Lê joystick analógico e envia dados via ESP-NOW
-- **Hardware**: ESP32-C3 Super Mini + Módulo Joystick
-- **Pinos**: 
-  - GPIO 3: VRX (eixo X)
-  - GPIO 4: VRY (eixo Y) 
-  - GPIO 2: SW (botão)
-  - GPIO 8: LED status
+### 📁 Sistema Básico (`transmit.ino` + `receive.ino`)
+**Para iniciantes e projetos simples**
+- 1 joystick analógico (X, Y, botão)
+- Controle tank drive de motores
+- Sistema de timeout e proteção
+- **📖 Guia**: [README_BASICO.md](README_BASICO.md)
 
-### 2. **`receive/`** - Pasta do Receptor (Motores)
-- **Arquivo**: `receive/receive.ino`
-- **Função**: Recebe dados ESP-NOW e controla motores L298N
-- **Hardware**: ESP32-C3 Super Mini + L298N + 2 Motores DC
-- **Pinos**:
-  - GPIO 1: Motor IN1 (esquerdo)
-  - GPIO 2: Motor IN2 (esquerdo)
-  - GPIO 3: Motor IN3 (direito)
-  - GPIO 4: Motor IN4 (direito)
-  - GPIO 8: LED status
+### 🚀 Sistema Expandido (`expanded_transmit.ino` + `expanded_receive.ino`)  
+**Para projetos avançados**
+- Todos os recursos do básico +
+- 2º joystick, potenciômetro, sensor luz
+- 4 botões funcionais (turbo, luzes, buzzer, liga/desliga)
+- Controles auxiliares (servo, LEDs, relé)
+- **📖 Guia**: [README_EXPANSION.md](README_EXPANSION.md)
 
-## 🔧 **Como Usar:**
+---
 
-### **Passo 1: Configure o Receptor**
-1. Abra a pasta `receive/` no Arduino IDE
-2. Abra o arquivo `receive.ino`
-3. Selecione placa: **"ESP32C3 Dev Module"**
-4. Faça upload no ESP32 do receptor
-5. Abra Serial Monitor (115200 baud)
-6. **Copie o MAC Address** exibido
+## 📁 Estrutura de Pastas
 
-### **Passo 2: Configure o Transmissor**
-1. Abra a pasta `transmit/` no Arduino IDE
-2. Abra o arquivo `transmit.ino`  
-2. **Altere a linha:**
+### Sistema Básico
+#### **`transmit/`** - Transmissor Básico
+- **Arquivo**: `transmit.ino` 
+- **Hardware**: ESP32-C3 + 1 joystick analógico
+- **Pinos**: GPIO 3,4,2 (X,Y,botão) + GPIO 8 (LED)
+
+#### **`receive/`** - Receptor Básico  
+- **Arquivo**: `receive.ino`
+- **Hardware**: ESP32-C3 + L298N + 2 motores DC
+- **Pinos**: GPIO 1-4 (motores) + GPIO 8 (LED)
+
+### Sistema Expandido
+#### **`expanded_transmit/`** - Transmissor Expandido
+- **Arquivo**: `expanded_transmit.ino`
+- **Hardware**: ESP32-C3 + múltiplos sensores
+- **Sensores**: 2 joysticks, potenciômetro, sensor luz, 4 botões
+
+#### **`expanded_receive/`** - Receptor Expandido
+- **Arquivo**: `expanded_receive.ino` 
+- **Hardware**: ESP32-C3 + L298N + controles auxiliares
+- **Controles**: Motores, servo, buzzer, LEDs, relé
+
+---
+
+## 🚀 Início Rápido
+
+### Escolha sua versão primeiro:
+- **🟢 Iniciante?** Use o Sistema Básico
+- **🟡 Avançado?** Use o Sistema Expandido
+
+### Para ambas as versões:
+
+#### **1. Configure o Receptor**
+1. Upload do código receptor (`receive.ino` ou `expanded_receive.ino`)
+2. Abra Serial Monitor (115200 baud)  
+3. **Copie o MAC Address** exibido
+
+#### **2. Configure o Transmissor**
+1. No código transmissor, altere:
    ```cpp
-   uint8_t receiverMAC[] = {0x20, 0x6E, 0xF1, 0x6D, 0x9F, 0xBC}; // ALTERE AQUI!
+   uint8_t receiverMAC[] = {0x20, 0x6E, 0xF1, 0x6D, 0x9F, 0xBC}; // ALTERE!
    ```
-   Cole o MAC do receptor copiado no Passo 1
-3. Faça upload no ESP32 do transmissor
+2. Upload do código transmissor
 
-### **Passo 3: Teste**
-- Ligue ambos os dispositivos
-- Mova o joystick
-- Verifique se os motores respondem
+#### **3. Teste no Serial Monitor**
+- **Transmissor**: Valores lidos dos sensores
+- **Receptor**: Dados recebidos + comandos dos motores
 
-## ⚙️ **Configurações importantes:**
+---
 
-### **Limitação de Potência:**
-Para reduzir a potência máxima dos motores, altere em ambos os arquivos (`transmit.ino` e `receive.ino`):
+## ⚙️ Configurações Importantes
+
+### Proteção de Motores
+Para motores 5V com baterias lítio (8.4V), altere:
 ```cpp
-#define FATOR_DE_POTENCIA 0.75  // 75% da potência máxima
+#define FATOR_DE_POTENCIA 0.6  // 60% = proteção contra sobretensão
 ```
-**Valores de potência:**
-- `0.5` = 50% da potência
-- `0.75` = 75% da potência  
-- `1.0` = 100% da potência
 
-**⚠️ PROTEÇÃO PARA MOTORES 5V:**
-Se você está usando **motores de 5V** com **duas baterias de lítio** (7.4V-8.4V total), é **altamente recomendado** limitar a potência para **0.6-0.7** (60-70%).
+### Configuração Arduino IDE
+- **Placa**: "ESP32C3 Dev Module"  
+- **Serial**: 115200 baud
+- **Bibliotecas**: Apenas ESP32 core (WiFi e ESP-NOW inclusos)
 
-**Por quê?**
-- Baterias lítio carregadas: 4.2V × 2 = **8.4V**
-- Motor nominal: **5V**
-- Sobretensão: **8.4V ÷ 5V = 168%** (68% a mais!)
-- **Resultado**: Motor superaquece e pode queimar
+---
+
+## 📊 Comparação das Versões
+
+| Característica | Sistema Básico | Sistema Expandido |
+|---|:---:|:---:|
+| **Arquivos** | `transmit.ino`<br>`receive.ino` | `expanded_transmit.ino`<br>`expanded_receive.ino` |
+| **Complexidade** | 🟢 Simples | 🟡 Intermediária |
+| **Sensores** | 1 joystick | 2 joysticks + potenciômetro + LDR |
+| **Botões** | 1 (sem função) | 5 (c/ funcionalidades) |
+| **Controles** | Apenas motores | Motores + servo + buzzer + LEDs |
+| **Tempo montagem** | 30 min | 2 horas |
+| **Ideal para** | Aprendizado | Robô completo |
+
+---
+
+## 🛡️ Segurança
+
+**Ambas as versões:**
+- ⏰ Timeout: Para motores sem sinal (1s)
+- 🔋 Proteção tensão: FATOR_DE_POTENCIA  
+- 📡 RF otimizado: Máxima estabilidade
+
+**Sistema expandido adiciona:**
+- 🛑 Parada de emergência (botão joystick)
+- 🔌 Chave geral (desliga tudo)
+- 🔘 Debouncing automático
+
+---
+
+## 💡 Qual Sistema Escolher?
+
+### Use o **Sistema Básico** se:
+- ⭐ É seu primeiro projeto ESP32
+- 🎯 Quer algo funcional rapidamente  
+- 📦 Tem apenas 1 joystick
+- 🚗 Precisa de controle simples
+
+### Use o **Sistema Expandido** se:
+- 🚀 Quer todas as funcionalidades
+- 🎮 Tem múltiplos sensores
+- 🤖 Está fazendo robô complexo
+- 💡 Precisa de controles auxiliares
+
+---
+
+## 📞 Suporte
+
+1. **📖 Leia o README específico** da sua versão
+2. **🔍 Verifique Serial Monitor** para debug
+3. **🔌 Confirme conexões** conforme pinout
+4. **📡 Teste ESP-NOW** isoladamente
 
 **Proteção via software:**
 ```cpp
