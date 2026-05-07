@@ -39,8 +39,8 @@
 
 // MAC Address do receptor
 // Mantenha esta opção de broadcast para testes iniciais.
-//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-uint8_t receiverMAC[] = {0x20, 0x6E, 0xF1, 0x6D, 0x9F, 0xBC}; // ALTERE AQUI!
+uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+//uint8_t receiverMAC[] = {0x20, 0x6E, 0xF1, 0x6D, 0x9F, 0xBC}; // ALTERE AQUI!
 
 //----------------------------------------------------------------------
 // ESTRUTURAS DE DADOS EXPANDIDAS

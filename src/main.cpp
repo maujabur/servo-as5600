@@ -37,8 +37,8 @@
 
 // MAC Address do receptor (substitua pelo MAC real do seu receptor ESP32)
 // Para descobrir o MAC, use WiFi.macAddress() no receptor
-//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Broadcast - use durante testes iniciais, mas não recomendado para uso final
-uint8_t receiverMAC[] = {0x90, 0xE5, 0xB1, 0x8E, 0x83, 0x4E};
+uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Broadcast - use durante testes iniciais, mas não recomendado para uso final
+//uint8_t receiverMAC[] = {0x90, 0xE5, 0xB1, 0x8E, 0x83, 0x4E};
 
 // Estrutura de dados para enviar
 typedef struct {

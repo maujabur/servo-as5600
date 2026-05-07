@@ -33,8 +33,8 @@
 // MAC Address do receptor (substitua pelo MAC real do seu receptor ESP32)
 // Para descobrir o MAC, execute o código no receptor e veja o Serial Monitor
 // Mantenha esta opção de broadcast para testes iniciais.
-//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-uint8_t receiverMAC[] = {0x20, 0x6E, 0xF1, 0x6D, 0x9F, 0xBC}; // ALTERE AQUI!
+uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+//uint8_t receiverMAC[] = {0x90, 0xE5, 0xB1, 0x8E, 0x83, 0x4E}; // ALTERE AQUI!
 
 //----------------------------------------------------------------------
 // ESTRUTURAS DE DADOS
