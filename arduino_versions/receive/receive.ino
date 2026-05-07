@@ -1,5 +1,5 @@
 //----------------------------------------------------------------------
-// ESP32-C3 Joystick Receiver (ESP-NOW + L298N Motor Control)
+// ESP32-S2 Joystick Receiver (ESP-NOW + L298N Motor Control)
 // Arquivo separado para uso no Arduino IDE
 //----------------------------------------------------------------------
 
@@ -17,18 +17,18 @@
 #define AXIS_MIN_OUTPUT -255 * FATOR_DE_POTENCIA
 #define AXIS_CENTER_OUTPUT 0
 
-// Definições dos pinos para ESP32-C3 Super Mini (RECEPTOR)
-#define LED_PIN 8           // LED interno para status
+// Definições dos pinos para ESP32-S2 Mini (RECEPTOR)
+#define LED_PIN 15          // LED interno para status
 
-// LED com lógica invertida (LOW = liga, HIGH = desliga)
-#define LED_ON  LOW
-#define LED_OFF HIGH
+// LED ativo em HIGH no ESP32-S2 Mini usado neste projeto
+#define LED_ON  HIGH
+#define LED_OFF LOW
 
-// Definições dos pinos para L298N (receptor) - Pinos agrupados GPIO 1-4
-#define MOTOR_RIGHT_IN1   1   // IN3 - PWM+Direção motor direito
-#define MOTOR_RIGHT_IN2   2   // IN4 - PWM+Direção motor direito
-#define MOTOR_LEFT_IN1    3   // IN1 - PWM+Direção motor esquerdo
-#define MOTOR_LEFT_IN2    4   // IN2 - PWM+Direção motor esquerdo
+// Definições dos pinos para L298N (receptor)
+#define MOTOR_RIGHT_IN1   12  // IN1 - PWM+Direção motor direito
+#define MOTOR_RIGHT_IN2   11  // IN2 - PWM+Direção motor direito
+#define MOTOR_LEFT_IN1     9  // IN3 - PWM+Direção motor esquerdo
+#define MOTOR_LEFT_IN2     7  // IN4 - PWM+Direção motor esquerdo
 
 //----------------------------------------------------------------------
 // ESTRUTURAS DE DADOS
@@ -304,7 +304,7 @@ void controlMotors(MotorCommands* commands) {
 //----------------------------------------------------------------------
 
 // Callback quando dados são recebidos (receptor)
-void OnDataReceived(const uint8_t *mac_addr, const uint8_t *data, int len) {
+void OnDataReceived(const esp_now_recv_info *recv_info, const uint8_t *data, int len) {
   // Verificar se o tamanho dos dados está correto
   if (len == sizeof(JoystickData)) {
     memcpy(&receivedData, data, sizeof(JoystickData));
@@ -317,10 +317,11 @@ void OnDataReceived(const uint8_t *mac_addr, const uint8_t *data, int len) {
     delay(50);
     digitalWrite(LED_PIN, LED_OFF);
     
-    // Log no Serial com MAC do transmissor
+    // Log no Serial com MAC do transmissor (acessar via recv_info->src_addr)
     Serial.printf("[%d] Recebido de %02X:%02X:%02X:%02X:%02X:%02X:\n",
                   packetsReceived,
-                  mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+                  recv_info->src_addr[0], recv_info->src_addr[1], recv_info->src_addr[2], 
+                  recv_info->src_addr[3], recv_info->src_addr[4], recv_info->src_addr[5]);
     
     // Normalizar dados
     normalizeJoystickData(&receivedData, &normalizedData);
@@ -398,7 +399,7 @@ bool initESPNow_RX() {
 void setup() {
   Serial.begin(115200);
   delay(2000);  // Delay para conseguir ver o MAC address
-  Serial.println("=== ESP32-C3 Joystick Receptor (Otimizado) ===");
+  Serial.println("=== ESP32-S2 Joystick Receptor (Otimizado) ===");
   
   // Configurar WiFi para obter MAC address
   WiFi.mode(WIFI_STA);

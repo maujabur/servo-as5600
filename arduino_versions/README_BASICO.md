@@ -1,4 +1,4 @@
-# Sistema Básico - ESP32 Joystick
+# Sistema Básico - ESP32-S2 Joystick
 
 ## 📄 Arquivos
 
@@ -8,7 +8,7 @@
 ## ⚡ Funcionalidades
 
 ### Hardware Necessário
-- 2x ESP32-C3 Super Mini
+- 2x ESP32-S2 Mini
 - 1x Joystick analógico (2 eixos + botão)
 - 1x Driver L298N 
 - 2x Motores DC
@@ -29,29 +29,32 @@
 
 ## 🔧 Configuração
 
-### Pinos do Transmissor (ESP32-C3)
+### Pinos do Transmissor (ESP32-S2)
 ```
-GPIO 3: Joystick X (analógico)
-GPIO 4: Joystick Y (analógico)  
-GPIO 2: Botão joystick (digital, pull-up)
-GPIO 8: LED status (invertido: LOW=liga)
+GPIO 7: Joystick X (analógico)
+GPIO 9: Joystick Y (analógico)
+GPIO 5: Botão joystick (digital, pull-up)
+GPIO 15: LED status (ativo em HIGH)
 ```
 
-### Pinos do Receptor (ESP32-C3)
+Observação do módulo joystick:
+- Se os pinos do módulo ficarem "para baixo" na montagem, conecte cruzado: VRX -> Y e VRY -> X.
+
+### Pinos do Receptor (ESP32-S2)
 ```
-GPIO 1: Motor direito IN1 (PWM)
-GPIO 2: Motor direito IN2 (PWM)
-GPIO 3: Motor esquerdo IN1 (PWM)  
-GPIO 4: Motor esquerdo IN2 (PWM)
-GPIO 8: LED status (invertido: LOW=liga)
+GPIO 12: Motor direito IN1 (PWM)
+GPIO 11: Motor direito IN2 (PWM)
+GPIO 9: Motor esquerdo IN3 (PWM)
+GPIO 7: Motor esquerdo IN4 (PWM)
+GPIO 15: LED status (ativo em HIGH)
 ```
 
 ### L298N (ENA/ENB com jumpers)
 ```
-IN1 ← GPIO 3 (PWM+Direção motor esquerdo)
-IN2 ← GPIO 4 (PWM+Direção motor esquerdo)
-IN3 ← GPIO 1 (PWM+Direção motor direito)
-IN4 ← GPIO 2 (PWM+Direção motor direito)
+IN1 ← GPIO 12 (PWM+Direção motor direito)
+IN2 ← GPIO 11 (PWM+Direção motor direito)
+IN3 ← GPIO 9 (PWM+Direção motor esquerdo)
+IN4 ← GPIO 7 (PWM+Direção motor esquerdo)
 ENA: Jumper (sempre HIGH)
 ENB: Jumper (sempre HIGH)
 ```
@@ -72,7 +75,7 @@ Mantenha o jumper próximo ao borne de alimentação **LIGADO** para ativar o re
 
 **Documentação Técnica:**
 - **L298N**: Consulte o datasheet do módulo L298N para especificações completas, diagramas de pinout e características elétricas
-- **ESP32-C3**: Para informações detalhadas sobre alimentação, consumo e especificações técnicas, consulte o manual do módulo ESP32-C3
+- **ESP32-S2 Mini**: Para informações detalhadas sobre alimentação, consumo e especificações técnicas, consulte o manual do módulo ESP32-S2 Mini
 
 ## 🚀 Como Usar
 
@@ -134,3 +137,11 @@ typedef struct {
 
 **Frequência**: 20 Hz (pacote a cada 50ms)  
 **Tamanho**: 9 bytes por pacote
+
+## 📡 MAC de Broadcast para Testes
+
+No `transmit.ino`, mantenha a linha de broadcast comentada para testes iniciais:
+
+```cpp
+//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+```

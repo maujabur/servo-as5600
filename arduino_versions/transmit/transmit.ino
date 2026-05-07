@@ -1,5 +1,5 @@
 //----------------------------------------------------------------------
-// ESP32-C3 Joystick Transmitter (ESP-NOW)
+// ESP32-S2 Joystick Transmitter (ESP-NOW)
 // Arquivo separado para uso no Arduino IDE
 //----------------------------------------------------------------------
 
@@ -17,19 +17,23 @@
 #define AXIS_MIN_OUTPUT -255 * FATOR_DE_POTENCIA
 #define AXIS_CENTER_OUTPUT 0
 
-// Definições dos pinos para ESP32-C3 Super Mini (TRANSMISSOR)
-#define JOYSTICK_X_PIN 3    // Pino analógico X do joystick (otimizado para conexão física)
-#define JOYSTICK_Y_PIN 4    // Pino analógico Y do joystick (otimizado para conexão física)
-#define JOYSTICK_BTN_PIN 2  // Botão do joystick (com pull-up interno)
-#define LED_PIN 8           // LED interno para status
+// Definições dos pinos para ESP32-S2 Mini (TRANSMISSOR)
+#define JOYSTICK_X_PIN 7    // Pino analógico X do joystick
+#define JOYSTICK_Y_PIN 9    // Pino analógico Y do joystick
+#define JOYSTICK_BTN_PIN 5  // Botão do joystick (com pull-up interno)
+#define LED_PIN 15          // LED interno para status
 
-// LED com lógica invertida (LOW = liga, HIGH = desliga)
-#define LED_ON  LOW
-#define LED_OFF HIGH
+// Se montar o módulo joystick com pinos "para baixo", conectar cruzado:
+// VRX -> eixo Y e VRY -> eixo X.
+
+// LED ativo em HIGH no ESP32-S2 Mini usado neste projeto
+#define LED_ON  HIGH
+#define LED_OFF LOW
 
 // MAC Address do receptor (substitua pelo MAC real do seu receptor ESP32)
 // Para descobrir o MAC, execute o código no receptor e veja o Serial Monitor
-//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Broadcast por enquanto
+// Mantenha esta opção de broadcast para testes iniciais.
+//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 uint8_t receiverMAC[] = {0x20, 0x6E, 0xF1, 0x6D, 0x9F, 0xBC}; // ALTERE AQUI!
 
 //----------------------------------------------------------------------
@@ -61,7 +65,7 @@ bool espnowReady = false;
 //----------------------------------------------------------------------
 
 // Callback quando dados são enviados (transmissor)
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
   static int success_count = 0;
   static int fail_count = 0;
   
@@ -144,7 +148,7 @@ void sendJoystickData() {
 void setup() {
   Serial.begin(115200);
   delay(2000);  // Delay para conseguir ver o MAC address
-  Serial.println("=== ESP32-C3 Joystick Transmitter (Otimizado) ===");
+  Serial.println("=== ESP32-S2 Joystick Transmitter (Otimizado) ===");
   
   // Configurar WiFi para obter MAC address
   WiFi.mode(WIFI_STA);

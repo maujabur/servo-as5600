@@ -1,6 +1,6 @@
-# ESP32-C3 Joystick ESP-NOW Controller
+# ESP32-S2 Joystick ESP-NOW Controller
 
-Sistema de controle remoto usando ESP32-C3 e ESP-NOW, disponível em duas versões para diferentes níveis de complexidade.
+Sistema de controle remoto usando ESP32-S2 Mini e ESP-NOW, disponível em duas versões para diferentes níveis de complexidade.
 
 ## 📁 **Estrutura do Projeto:**
 
@@ -58,29 +58,36 @@ Sistema de controle remoto usando ESP32-C3 e ESP-NOW, disponível em duas versõ
 
 ---
 
-## Pinos ESP32-C3 Super Mini
+## Pinos ESP32-S2 Mini (estado atual)
 
 ### Transmissor (Joystick):
-- **GPIO 4**: Eixo X do joystick (analógico)  
-- **GPIO 3**: Eixo Y do joystick (analógico)
-- **GPIO 2**: Botão do joystick
-- **GPIO 8**: LED de status
+- **GPIO 7**: Eixo X do joystick (analógico)
+- **GPIO 9**: Eixo Y do joystick (analógico)
+- **GPIO 5**: Botão do joystick
+- **GPIO 15**: LED de status
+
+Observação de montagem do módulo joystick:
+- Se o joystick for montado com os pinos de conexão "para baixo", conecte de forma cruzada:
+  - **VRX -> eixo Y**
+  - **VRY -> eixo X**
 
 ### Receptor (Motores):
-- **GPIO 1-4**: Motores L298N (pinos agrupados)
-- **GPIO 8**: LED de status
+- **GPIO 12**: IN1 motor direito
+- **GPIO 11**: IN2 motor direito
+- **GPIO 9**: IN3 motor esquerdo
+- **GPIO 7**: IN4 motor esquerdo
+- **GPIO 15**: LED de status
 
-### Considerações de Boot:
-- **GPIO 0**: EVITADO (pino de boot)
-- **GPIO 20,21**: EVITADOS (USB UART)  
-- **Grupo GPIO 1-4**: Ideal para conexões lado a lado
+### Situação de Placa:
+- **Principal**: ESP32-S2 Mini (melhor custo e antena mais confiável no lote atual)
+- **ESP32-C3 Super Mini**: mantida como opção, mas não é a placa principal neste momento
 ```
-Joystick    ESP32-C3
+Joystick    ESP32-S2
 +5V     ->  3.3V
 GND     ->  GND
-VRX     ->  GPIO 4
-VRY     ->  GPIO 3
-SW      ->  GPIO 2
+VRX     ->  GPIO 7 (ou GPIO 9 se montado cruzado)
+VRY     ->  GPIO 9 (ou GPIO 7 se montado cruzado)
+SW      ->  GPIO 5
 ```
 
 ## Como usar
@@ -128,23 +135,23 @@ uint8_t receiverMAC[] = {0x24, 0x6F, 0x28, 0xAA, 0xBB, 0xCC};
 
 ### 2. Conectar o joystick no transmissor (pinos otimizados)
 ```
-Joystick    ESP32-C3
+Joystick    ESP32-S2
 GND     ->  GND
 +5V     ->  3.3V
-VRX     ->  GPIO 4 (eixo X)
-VRY     ->  GPIO 3 (eixo Y)  
-SW      ->  GPIO 2 (botão)
+VRX     ->  GPIO 7 (eixo X)
+VRY     ->  GPIO 9 (eixo Y)
+SW      ->  GPIO 5 (botão)
 ```
 
 ### 3. Conectar a ponte H L298N no receptor (pinos agrupados GPIO 1-4)
 
 #### Conexões de Controle (ESP32 → L298N)
 ```
-ESP32-C3 → L298N
-Pino 1   → IN1 (PWM+Direção motor esquerdo)
-Pino 2   → IN2 (PWM+Direção motor esquerdo)
-Pino 3   → IN3 (PWM+Direção motor direito)
-Pino 4   → IN4 (PWM+Direção motor direito)
+ESP32-S2 → L298N
+Pino 12  → IN1 (PWM+Direção motor direito)
+Pino 11  → IN2 (PWM+Direção motor direito)
+Pino 9   → IN3 (PWM+Direção motor esquerdo)
+Pino 7   → IN4 (PWM+Direção motor esquerdo)
 
 IMPORTANTE: ENA e ENB devem estar jumpeados (sempre HIGH)
 VANTAGEM: Pinos agrupados (1-4) no mesmo lado do módulo
@@ -169,7 +176,7 @@ Mantenha o jumper próximo ao borne **SEMPRE LIGADO** para ativar o regulador de
 
 **Documentação:**
 - **L298N**: Consulte o datasheet do módulo L298N para especificações completas e diagramas de pinout
-- **ESP32-C3**: Para detalhes sobre alimentação e especificações técnicas, consulte o manual do módulo ESP32-C3
+- **ESP32-S2 Mini**: Para detalhes sobre alimentação e especificações técnicas, consulte o manual do módulo ESP32-S2 Mini
 
 ### 4. Faça upload nos dispositivos
 

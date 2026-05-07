@@ -1,6 +1,6 @@
-# ESP32 Joystick Control System - Arduino IDE
+# ESP32-S2 Joystick Control System - Arduino IDE
 
-Sistema de controle remoto usando ESP32-C3 e ESP-NOW, com versões para diferentes níveis de complexidade.
+Sistema de controle remoto usando ESP32-S2 Mini e ESP-NOW, com versões para diferentes níveis de complexidade.
 
 ## 🎯 Duas Versões Disponíveis
 
@@ -26,23 +26,23 @@ Sistema de controle remoto usando ESP32-C3 e ESP-NOW, com versões para diferent
 ### Sistema Básico
 #### **`transmit/`** - Transmissor Básico
 - **Arquivo**: `transmit.ino` 
-- **Hardware**: ESP32-C3 + 1 joystick analógico
-- **Pinos**: GPIO 3,4,2 (X,Y,botão) + GPIO 8 (LED)
+- **Hardware**: ESP32-S2 Mini + 1 joystick analógico
+- **Pinos**: GPIO 7,9,5 (X,Y,botão) + GPIO 15 (LED)
 
 #### **`receive/`** - Receptor Básico  
 - **Arquivo**: `receive.ino`
-- **Hardware**: ESP32-C3 + L298N + 2 motores DC
-- **Pinos**: GPIO 1-4 (motores) + GPIO 8 (LED)
+- **Hardware**: ESP32-S2 Mini + L298N + 2 motores DC
+- **Pinos**: GPIO 12,11,9,7 (motores) + GPIO 15 (LED)
 
 ### Sistema Expandido
 #### **`expanded_transmit/`** - Transmissor Expandido
 - **Arquivo**: `expanded_transmit.ino`
-- **Hardware**: ESP32-C3 + múltiplos sensores
+- **Hardware**: ESP32-S2 Mini + múltiplos sensores
 - **Sensores**: 2 joysticks, potenciômetro, sensor luz, 4 botões
 
 #### **`expanded_receive/`** - Receptor Expandido
 - **Arquivo**: `expanded_receive.ino` 
-- **Hardware**: ESP32-C3 + L298N + controles auxiliares
+- **Hardware**: ESP32-S2 Mini + L298N + controles auxiliares
 - **Controles**: Motores, servo, buzzer, LEDs, relé
 
 ---
@@ -91,7 +91,7 @@ Mantenha o jumper próximo ao borne **SEMPRE LIGADO** para ativar o regulador de
 
 **Documentação Técnica:**
 - **L298N**: Consulte o datasheet do módulo L298N para especificações completas e diagramas
-- **ESP32-C3**: Para informações detalhadas sobre alimentação e especificações técnicas, consulte o manual do módulo ESP32-C3
+- **ESP32-S2 Mini**: Para informações detalhadas sobre alimentação e especificações técnicas, consulte o manual do módulo ESP32-S2 Mini
 
 ---
 
@@ -104,7 +104,7 @@ Para motores 5V com baterias lítio (8.4V), altere:
 ```
 
 ### Configuração Arduino IDE
-- **Placa**: "ESP32C3 Dev Module"  
+- **Placa**: "ESP32S2 Dev Module"
 - **Serial**: 115200 baud
 - **Bibliotecas**: Apenas ESP32 core (WiFi e ESP-NOW inclusos)
 
@@ -185,21 +185,21 @@ AxisConfig y_axis_config = {
 
 ### **Transmissor (Joystick):**
 ```
-Joystick → ESP32-C3
+Joystick → ESP32-S2
 GND      → GND  
 +5V      → 3.3V
-VRX      → GPIO 3
-VRY      → GPIO 4
-SW       → GPIO 2
+VRX      → GPIO 7
+VRY      → GPIO 9
+SW       → GPIO 5
 ```
 
 ### **Receptor (Motores):**
 ```
-L298N → ESP32-C3
-IN1   → GPIO 1 (motor esquerdo)
-IN2   → GPIO 2 (motor esquerdo)
-IN3   → GPIO 3 (motor direito) 
-IN4   → GPIO 4 (motor direito)
+L298N → ESP32-S2
+IN1   → GPIO 12 (motor direito)
+IN2   → GPIO 11 (motor direito)
+IN3   → GPIO 9 (motor esquerdo)
+IN4   → GPIO 7 (motor esquerdo)
 VCC   → 5V
 GND   → GND
 
@@ -223,6 +223,10 @@ GND   → GND
 - **Serial Monitor**: Debug detalhado dos comandos
 
 Estes arquivos são **independentes** do PlatformIO e funcionam diretamente no Arduino IDE! 🎯
+
+## Nota de Pareamento
+
+Nos transmissores (`transmit.ino` e `expanded_transmit.ino`), a opção de MAC de broadcast (`FF:FF:FF:FF:FF:FF`) permanece comentada para testes iniciais e não deve ser removida.
 
 ---
 

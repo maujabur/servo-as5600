@@ -1,5 +1,5 @@
 //----------------------------------------------------------------------
-// ESP32-C3 Expanded Joystick Receiver (ESP-NOW + Controles Avançados)
+// ESP32-S2 Expanded Joystick Receiver (ESP-NOW + Controles Avançados)
 // Versão expandida para múltiplos sensores e controles
 //----------------------------------------------------------------------
 
@@ -11,24 +11,24 @@
 // CONFIGURAÇÕES DO RECEPTOR EXPANDIDO
 //----------------------------------------------------------------------
 
-// Pinos do receptor expandido para ESP32-C3
-#define LED_PIN 8           // LED interno para status
+// Pinos do receptor expandido para ESP32-S2
+#define LED_PIN 15          // LED interno para status
 
 // Motores principais (L298N)
-#define MOTOR_RIGHT_IN1   1   // Motor direito
-#define MOTOR_RIGHT_IN2   2
-#define MOTOR_LEFT_IN1    3   // Motor esquerdo
-#define MOTOR_LEFT_IN2    4
+#define MOTOR_RIGHT_IN1   12  // Motor direito
+#define MOTOR_RIGHT_IN2   11
+#define MOTOR_LEFT_IN1     9  // Motor esquerdo
+#define MOTOR_LEFT_IN2     7
 
 // Controles adicionais
-#define SERVO_PIN        5    // Servo motor (controle de câmera/braço)
-#define BUZZER_PIN       6    // Buzzer
-#define LED_LIGHT_PIN    7    // LEDs de iluminação
-#define RELAY_PIN        9    // Relé geral
+#define SERVO_PIN        6    // Servo motor (controle de câmera/braço)
+#define BUZZER_PIN       8    // Buzzer
+#define LED_LIGHT_PIN    10   // LEDs de iluminação
+#define RELAY_PIN        13   // Relé geral
 
-// LED com lógica invertida
-#define LED_ON  LOW
-#define LED_OFF HIGH
+// LED ativo em HIGH no ESP32-S2 Mini usado neste projeto
+#define LED_ON  HIGH
+#define LED_OFF LOW
 
 //----------------------------------------------------------------------
 // ESTRUTURAS DE DADOS EXPANDIDAS (DEVE SER IGUAL AO TRANSMISSOR!)
@@ -239,7 +239,7 @@ void executeCommands(ExpandedMotorCommands* commands) {
 // CALLBACK ESP-NOW
 //----------------------------------------------------------------------
 
-void OnDataReceived(const uint8_t *mac_addr, const uint8_t *data, int len) {
+void OnDataReceived(const esp_now_recv_info *recv_info, const uint8_t *data, int len) {
   if (len == sizeof(ExpandedJoystickData)) {
     memcpy(&receivedData, data, sizeof(ExpandedJoystickData));
     lastReceiveTime = millis();
@@ -305,7 +305,7 @@ bool initESPNow_RX() {
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  Serial.println("=== ESP32-C3 Expanded Joystick Receiver ===");
+  Serial.println("=== ESP32-S2 Expanded Joystick Receiver ===");
   
   WiFi.mode(WIFI_STA);
   Serial.println("MAC Address do RECEPTOR EXPANDIDO:");

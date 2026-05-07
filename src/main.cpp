@@ -6,9 +6,9 @@
 #define TX_MODE 0 // transmitter mode
 #define RX_MODE 1 // receiver mode
 
-#define MODE RX_MODE  // Mudando para modo receptor
+#define MODE TX_MODE  // Mudando para modo receptor
 
-//-------``---------------------------------------------------------------
+//----------------------------------------------------------------------
 // esp-now analog joystick with 1 button transmitter and receiver
 //----------------------------------------------------------------------
 
@@ -18,26 +18,27 @@
 #define AXIS_MIN_OUTPUT -255 * FATOR_DE_POTENCIA
 #define AXIS_CENTER_OUTPUT 0
 
-// Definições dos pinos para ESP32-C3 Super Mini
-#define JOYSTICK_X_PIN 3    // Pino analógico X do joystick (otimizado para conexão física)
-#define JOYSTICK_Y_PIN 4    // Pino analógico Y do joystick (otimizado para conexão física)
-#define JOYSTICK_BTN_PIN 2  // Botão do joystick (com pull-up interno)
-#define LED_PIN 8           // LED interno para status
+// Definições dos pinos para ESP32-S2 Mini
+#define JOYSTICK_X_PIN 7    // Pino analógico X do joystick (otimizado para conexão física)
+#define JOYSTICK_Y_PIN 9    // Pino analógico Y do joystick (otimizado para conexão física)
+#define JOYSTICK_BTN_PIN 5  // Botão do joystick (com pull-up interno)
+#define LED_PIN 15           // LED interno para status
 
-// LED com lógica invertida (LOW = liga, HIGH = desliga)
-#define LED_ON  LOW
-#define LED_OFF HIGH
+// Para usar o joystick com os pinos de conexão para "baixo" os sinais marcados como "VRX" e "VRY" são conectados de forma cruzada (VRX -> Y e VRY -> X)
+// LED ativo em HIGH no ESP32-S2 Mini usado neste projeto
+#define LED_ON  HIGH
+#define LED_OFF LOW
 
 // Definições dos pinos para L298N (receptor) - Pinos agrupados GPIO 1-4
-#define MOTOR_RIGHT_IN1   1   // IN3 - PWM+Direção motor direito
-#define MOTOR_RIGHT_IN2   2   // IN4 - PWM+Direção motor direito
-#define MOTOR_LEFT_IN1    3   // IN1 - PWM+Direção motor esquerdo
-#define MOTOR_LEFT_IN2    4   // IN2 - PWM+Direção motor esquerdo
+#define MOTOR_RIGHT_IN1   12   // IN1 - PWM+Direção motor direito
+#define MOTOR_RIGHT_IN2   11   // IN2 - PWM+Direção motor direito
+#define MOTOR_LEFT_IN1     9   // IN3 - PWM+Direção motor esquerdo
+#define MOTOR_LEFT_IN2     7   // IN4 - PWM+Direção motor esquerdo
 
 // MAC Address do receptor (substitua pelo MAC real do seu receptor ESP32)
 // Para descobrir o MAC, use WiFi.macAddress() no receptor
-//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Broadcast por enquanto
-uint8_t receiverMAC[] = {0x20, 0x6E, 0xF1, 0x6D, 0x9F, 0xBC};
+//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Broadcast - use durante testes iniciais, mas não recomendado para uso final
+uint8_t receiverMAC[] = {0x90, 0xE5, 0xB1, 0x8E, 0x83, 0x4E};
 
 // Estrutura de dados para enviar
 typedef struct {
@@ -104,7 +105,7 @@ int packetsReceived = 0;
 
 // Configuração de calibração dos eixos (valores iniciais)
 AxisConfig x_axis_config = {
-  .center = 2266,           // Centro teórico
+  .center = 2660,           // Centro teórico
   .min_value = 0,           // Mínimo ADC
   .max_value = 4095,        // Máximo ADC
   .center_deadzone = 200,   // Zona morta centro
@@ -112,7 +113,7 @@ AxisConfig x_axis_config = {
 };
 
 AxisConfig y_axis_config = {
-  .center = 2221,
+  .center = 2620,
   .min_value = 0,
   .max_value = 4095,
   .center_deadzone = 200,
@@ -463,8 +464,8 @@ void sendJoystickData() {
 //----------------------------------------------------------------------
 void tx_setup() {
   Serial.begin(115200);
-  delay(2000);  // Delay para conseguir ver o MAC address
-  Serial.println("=== ESP32-C3 Joystick Transmitter (Otimizado) ===");
+  delay(3000);  // Delay para conseguir ver o MAC address
+  Serial.println("=== ESP32-S2 Joystick Transmitter (Otimizado) ===");
   
   // Configurar WiFi para obter MAC address
   WiFi.mode(WIFI_STA);
@@ -542,7 +543,7 @@ void tx_loop() {
 void rx_setup() {
   Serial.begin(115200);
   delay(2000);  // Delay para conseguir ver o MAC address
-  Serial.println("=== ESP32-C3 Joystick Receptor (Otimizado) ===");
+  Serial.println("=== ESP32-S2 Joystick Receptor (Otimizado) ===");
   
   // Configurar WiFi para obter MAC address
   WiFi.mode(WIFI_STA);

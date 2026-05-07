@@ -36,23 +36,23 @@
 ### Hardware Adicional Suportado
 ```
 Sensores Analógicos:
-├── Joystick Principal (GPIO 3,4,2) - Motores principais  
-├── Joystick Secundário (GPIO 0,1) - Controle servo/câmera
-├── Potenciômetro (GPIO 5) - Controle de velocidade
-└── Sensor de Luz (GPIO 6) - Luzes automáticas
+├── Joystick Principal (GPIO 7,9,5) - Motores principais
+├── Joystick Secundário (GPIO 6,8) - Controle servo/câmera
+├── Potenciômetro (GPIO 10) - Controle de velocidade
+└── Sensor de Luz (GPIO 11) - Luzes automáticas
 
 Controles Digitais:
-├── Botão 1 (GPIO 7) - Modo turbo
-├── Botão 2 (GPIO 9) - Controle luzes auto/manual  
-├── Botão 3 (GPIO 10) - Buzzer/sirene
-└── Switch (GPIO 20) - Liga/desliga geral
+├── Botão 1 (GPIO 12) - Modo turbo
+├── Botão 2 (GPIO 13) - Controle luzes auto/manual
+├── Botão 3 (GPIO 14) - Buzzer/sirene
+└── Switch (GPIO 16) - Liga/desliga geral
 
 Saídas do Receptor:
-├── Motores L298N (GPIO 1-4) - Tank drive
-├── Servo Motor (GPIO 5) - Câmera/braço robótico
-├── LEDs Iluminação (GPIO 7) - Faróis
-├── Buzzer (GPIO 6) - Sirene
-└── Relé (GPIO 9) - Controle geral 5V
+├── Motores L298N (GPIO 12,11,9,7) - Tank drive
+├── Servo Motor (GPIO 6) - Câmera/braço robótico
+├── LEDs Iluminação (GPIO 10) - Faróis
+├── Buzzer (GPIO 8) - Sirene
+└── Relé (GPIO 13) - Controle geral 5V
 ```
 
 ### Funcionalidades Expandidas
@@ -226,7 +226,21 @@ Mantenha o jumper próximo ao borne **SEMPRE LIGADO** para ativar o regulador de
 
 **Documentação Técnica:**
 - **L298N**: Consulte o datasheet do módulo L298N para especificações completas, diagramas de pinout e características elétricas
-- **ESP32-C3**: Para detalhes sobre alimentação, consumo e especificações técnicas, consulte o manual do módulo ESP32-C3
+- **ESP32-S2 Mini**: Para detalhes sobre alimentação, consumo e especificações técnicas, consulte o manual do módulo ESP32-S2 Mini
+
+### Observação do Módulo Joystick
+
+Se o módulo joystick for montado com os pinos "para baixo", conecte cruzado no joystick principal:
+- VRX -> eixo Y
+- VRY -> eixo X
+
+### MAC de Broadcast para Testes
+
+No `expanded_transmit.ino`, mantenha disponível a linha comentada de broadcast para fases iniciais de validação:
+
+```cpp
+//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+```
 
 ---
 

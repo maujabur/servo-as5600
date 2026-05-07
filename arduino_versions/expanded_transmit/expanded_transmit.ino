@@ -1,5 +1,5 @@
 //----------------------------------------------------------------------
-// ESP32-C3 Expanded Joystick Transmitter (ESP-NOW)
+// ESP32-S2 Expanded Joystick Transmitter (ESP-NOW)
 // Versão expandida com múltiplos sensores e botões
 //----------------------------------------------------------------------
 
@@ -11,31 +11,35 @@
 // CONFIGURAÇÕES DO TRANSMISSOR EXPANDIDO
 //----------------------------------------------------------------------
 
-// Definições dos pinos para ESP32-C3 Super Mini (TRANSMISSOR EXPANDIDO)
-#define JOYSTICK_X_PIN 3     // Pino analógico X do joystick principal
-#define JOYSTICK_Y_PIN 4     // Pino analógico Y do joystick principal
-#define JOYSTICK_BTN_PIN 2   // Botão do joystick principal
+// Definições dos pinos para ESP32-S2 Mini (TRANSMISSOR EXPANDIDO)
+#define JOYSTICK_X_PIN 7     // Pino analógico X do joystick principal
+#define JOYSTICK_Y_PIN 9     // Pino analógico Y do joystick principal
+#define JOYSTICK_BTN_PIN 5   // Botão do joystick principal
 
 // Sensores adicionais
-#define JOYSTICK2_X_PIN 0    // Segundo joystick (eixo X)
-#define JOYSTICK2_Y_PIN 1    // Segundo joystick (eixo Y)
-#define POTENTIOMETER_PIN 5  // Potenciômetro para velocidade
-#define LIGHT_SENSOR_PIN 6   // Sensor de luz (para controle automático)
+#define JOYSTICK2_X_PIN 6    // Segundo joystick (eixo X)
+#define JOYSTICK2_Y_PIN 8    // Segundo joystick (eixo Y)
+#define POTENTIOMETER_PIN 10 // Potenciômetro para velocidade
+#define LIGHT_SENSOR_PIN 11  // Sensor de luz (para controle automático)
 
 // Botões adicionais
-#define BUTTON1_PIN 7        // Botão 1 (modo turbo)
-#define BUTTON2_PIN 9        // Botão 2 (luzes)
-#define BUTTON3_PIN 10       // Botão 3 (buzzer)
-#define SWITCH1_PIN 20       // Chave liga/desliga geral
+#define BUTTON1_PIN 12       // Botão 1 (modo turbo)
+#define BUTTON2_PIN 13       // Botão 2 (luzes)
+#define BUTTON3_PIN 14       // Botão 3 (buzzer)
+#define SWITCH1_PIN 16       // Chave liga/desliga geral
 
-#define LED_PIN 8           // LED interno para status
+#define LED_PIN 15          // LED interno para status
 
-// LED com lógica invertida
-#define LED_ON  LOW
-#define LED_OFF HIGH
+// Se montar o módulo joystick com pinos "para baixo", conectar cruzado:
+// VRX -> eixo Y e VRY -> eixo X.
+
+// LED ativo em HIGH no ESP32-S2 Mini usado neste projeto
+#define LED_ON  HIGH
+#define LED_OFF LOW
 
 // MAC Address do receptor
-//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Broadcast por enquanto
+// Mantenha esta opção de broadcast para testes iniciais.
+//uint8_t receiverMAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 uint8_t receiverMAC[] = {0x20, 0x6E, 0xF1, 0x6D, 0x9F, 0xBC}; // ALTERE AQUI!
 
 //----------------------------------------------------------------------
@@ -94,7 +98,7 @@ ButtonState button_states[5]; // Para 5 botões
 // FUNÇÕES DE CALLBACK ESP-NOW
 //----------------------------------------------------------------------
 
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
   static int success_count = 0;
   static int fail_count = 0;
   
@@ -198,7 +202,7 @@ void sendJoystickData() {
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  Serial.println("=== ESP32-C3 Expanded Joystick Transmitter ===");
+  Serial.println("=== ESP32-S2 Expanded Joystick Transmitter ===");
   
   WiFi.mode(WIFI_STA);
   
