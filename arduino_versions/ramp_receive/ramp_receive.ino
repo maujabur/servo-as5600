@@ -25,6 +25,9 @@
 #define AXIS_MIN_OUTPUT -255 * FATOR_DE_POTENCIA
 #define AXIS_CENTER_OUTPUT 0
 
+// Inicialização rápida: 1 = sem delay/piscadas de boot, 0 = comportamento normal
+#define FAST_STARTUP 0
+
 // Definições dos pinos para ESP32-S2 Mini (RECEPTOR)
 #define LED_PIN 15          // LED interno para status
 
@@ -392,7 +395,7 @@ void controlMotorsWithRamps(MotorCommands* commands, unsigned long current_time)
 // FUNÇÕES DE CALLBACK ESP-NOW
 //----------------------------------------------------------------------
 
-// Callback quando dados são recebidos (receptor)
+// Callback quando dados são recebidos
 void OnDataReceived(const esp_now_recv_info *recv_info, const uint8_t *data, int len) {
   unsigned long current_time = millis();
   
@@ -403,7 +406,7 @@ void OnDataReceived(const esp_now_recv_info *recv_info, const uint8_t *data, int
     dataReceived = true;
     packetsReceived++;
     
-    // Log no Serial com MAC do transmissor (acessar via recv_info->src_addr)
+    // Log no Serial com MAC do transmissor
     Serial.printf("[%d] Recebido de %02X:%02X:%02X:%02X:%02X:%02X:\n",
                   packetsReceived,
                   recv_info->src_addr[0], recv_info->src_addr[1], recv_info->src_addr[2], 
@@ -487,7 +490,9 @@ bool initESPNow_RX() {
 
 void setup() {
   Serial.begin(115200);
+  #if !FAST_STARTUP
   delay(2000);  // Delay para conseguir ver o MAC address
+  #endif
   Serial.println("=== ESP32-S2 Joystick Receptor (VERSÃO RAMPA) ===");
   Serial.println("⚡ RAMPAS ASSIMÉTRICAS ATIVADAS");
   Serial.printf("   Aceleração: %dms | Frenagem: %dms\n", ACCELERATION_TIME, DECELERATION_TIME);
@@ -541,6 +546,7 @@ void setup() {
   
   if (espnowReady) {
     Serial.println("Receptor pronto!");
+    #if !FAST_STARTUP
     // Piscar LED 3 vezes para indicar inicialização OK
     for(int i = 0; i < 3; i++) {
       digitalWrite(LED_PIN, LED_ON);  // Liga LED
@@ -548,6 +554,7 @@ void setup() {
       digitalWrite(LED_PIN, LED_OFF); // Desliga LED
       delay(200);
     }
+    #endif
   } else {
     Serial.println("Falha na inicialização!");
     // LED fixo indica erro (ligado)

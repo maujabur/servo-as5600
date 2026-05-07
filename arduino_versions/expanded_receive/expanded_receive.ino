@@ -15,6 +15,9 @@
 // Pinos do receptor expandido para ESP32-S2
 #define LED_PIN 15          // LED interno para status
 
+// Inicialização rápida: 1 = sem delay/piscadas de boot, 0 = comportamento normal
+#define FAST_STARTUP 0
+
 // Motores principais (L298N)
 #define MOTOR_RIGHT_IN1   11  // Motor direito
 #define MOTOR_RIGHT_IN2    9
@@ -237,9 +240,10 @@ void executeCommands(ExpandedMotorCommands* commands) {
 }
 
 //----------------------------------------------------------------------
-// CALLBACK ESP-NOW
+// FUNÇÕES DE CALLBACK ESP-NOW
 //----------------------------------------------------------------------
 
+// Callback quando dados são recebidos
 void OnDataReceived(const esp_now_recv_info *recv_info, const uint8_t *data, int len) {
   if (len == sizeof(ExpandedJoystickData)) {
     memcpy(&receivedData, data, sizeof(ExpandedJoystickData));
@@ -305,7 +309,9 @@ bool initESPNow_RX() {
 
 void setup() {
   Serial.begin(115200);
+  #if !FAST_STARTUP
   delay(2000);
+  #endif
   Serial.println("=== ESP32-S2 Expanded Joystick Receiver ===");
   
   WiFi.mode(WIFI_STA);
@@ -347,6 +353,7 @@ void setup() {
     Serial.println("- Botão 3: Buzzer");
     Serial.println("- Switch: Liga/desliga geral");
     
+    #if !FAST_STARTUP
     // Sequência de inicialização
     for(int i = 0; i < 3; i++) {
       digitalWrite(LED_PIN, LED_ON);
@@ -356,6 +363,7 @@ void setup() {
       digitalWrite(LED_LIGHT_PIN, LOW);
       delay(200);
     }
+    #endif
   }
 }
 

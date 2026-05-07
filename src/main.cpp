@@ -8,6 +8,9 @@
 
 #define MODE TX_MODE  // Mudando para modo receptor
 
+// Inicialização rápida: 1 = sem delay/piscadas de boot, 0 = comportamento normal
+#define FAST_STARTUP 0
+
 //----------------------------------------------------------------------
 // esp-now analog joystick with 1 button transmitter and receiver
 //----------------------------------------------------------------------
@@ -476,7 +479,9 @@ void sendJoystickData() {
 //----------------------------------------------------------------------
 void tx_setup() {
   Serial.begin(115200);
-  delay(3000);  // Delay para conseguir ver o MAC address
+  #if !FAST_STARTUP
+  delay(2000);  // Delay para conseguir ver o MAC address
+  #endif
   Serial.println("=== ESP32-S2 Joystick Transmitter (Otimizado) ===");
   
   // Configurar WiFi para obter MAC address
@@ -509,6 +514,7 @@ void tx_setup() {
   
   if (espnowReady) {
     Serial.println("Transmissor pronto!");
+    #if !FAST_STARTUP
     // Piscar LED 3 vezes para indicar inicialização OK
     for(int i = 0; i < 3; i++) {
       digitalWrite(LED_PIN, LED_ON);  // Liga LED
@@ -516,6 +522,7 @@ void tx_setup() {
       digitalWrite(LED_PIN, LED_OFF); // Desliga LED
       delay(200);
     }
+    #endif
   } else {
     Serial.println("Falha na inicialização!");
     // LED fixo indica erro (ligado)
@@ -554,7 +561,9 @@ void tx_loop() {
 //----------------------------------------------------------------------
 void rx_setup() {
   Serial.begin(115200);
+  #if !FAST_STARTUP
   delay(2000);  // Delay para conseguir ver o MAC address
+  #endif
   Serial.println("=== ESP32-S2 Joystick Receptor (Otimizado) ===");
   
   // Configurar WiFi para obter MAC address
@@ -593,6 +602,7 @@ void rx_setup() {
   
   if (espnowReady) {
     Serial.println("Receptor pronto!");
+    #if !FAST_STARTUP
     // Piscar LED 3 vezes para indicar inicialização OK
     for(int i = 0; i < 3; i++) {
       digitalWrite(LED_PIN, LED_ON);  // Liga LED
@@ -600,6 +610,7 @@ void rx_setup() {
       digitalWrite(LED_PIN, LED_OFF); // Desliga LED
       delay(200);
     }
+    #endif
   } else {
     Serial.println("Falha na inicialização!");
     // LED fixo indica erro (ligado)
