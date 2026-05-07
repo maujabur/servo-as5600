@@ -564,12 +564,13 @@ void loop() {
   unsigned long currentTime = millis();
   
   // Verificar se há timeout na recepção
-  if (dataReceived && (currentTime - lastReceiveTime > RECEIVE_TIMEOUT)) {
+  if (currentTime - lastReceiveTime > RECEIVE_TIMEOUT) {
     Serial.println("[TIMEOUT] Sem dados há mais de 1 segundo - PARANDO MOTORES");
     // Parar motores por segurança (com rampa para frenagem suave)
     MotorCommands stop_commands = {0, 0, false, currentTime};
     controlMotorsWithRamps(&stop_commands, currentTime);
     dataReceived = false;
+    return;
   }
   
   // Atualizar rampas continuamente (mesmo sem novo pacote recebido)

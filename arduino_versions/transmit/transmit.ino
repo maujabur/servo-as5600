@@ -12,6 +12,9 @@
 // CONFIGURAÇÕES DO TRANSMISSOR
 //----------------------------------------------------------------------
 
+// Inicialização rápida: 1 = sem delay/piscadas de boot, 0 = comportamento normal
+#define FAST_STARTUP 0
+
 // Range de saída normalizada do joystick (para PWM 8-bit)
 #define FATOR_DE_POTENCIA 0.75
 #define AXIS_MAX_OUTPUT 255 * FATOR_DE_POTENCIA
@@ -147,7 +150,9 @@ void sendJoystickData() {
 
 void setup() {
   Serial.begin(115200);
+  #if !FAST_STARTUP
   delay(2000);  // Delay para conseguir ver o MAC address
+  #endif
   Serial.println("=== ESP32-S2 Joystick Transmitter (Otimizado) ===");
   
   // Configurar WiFi para obter MAC address
@@ -180,6 +185,7 @@ void setup() {
   
   if (espnowReady) {
     Serial.println("Transmissor pronto!");
+    #if !FAST_STARTUP
     // Piscar LED 3 vezes para indicar inicialização OK
     for(int i = 0; i < 3; i++) {
       digitalWrite(LED_PIN, LED_ON);  // Liga LED
@@ -187,6 +193,7 @@ void setup() {
       digitalWrite(LED_PIN, LED_OFF); // Desliga LED
       delay(200);
     }
+    #endif
   } else {
     Serial.println("Falha na inicialização!");
     // LED fixo indica erro (ligado)

@@ -305,7 +305,11 @@ void controlMotors(MotorCommands* commands) {
 }
 
 // Callback quando dados são enviados (transmissor)
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
+#else
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+#endif
   static int success_count = 0;
   static int fail_count = 0;
   
@@ -321,7 +325,17 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 }
 
 // Callback quando dados são recebidos (receptor)
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+void OnDataReceived(const esp_now_recv_info *recv_info, const uint8_t *data, int len) {
+#else
 void OnDataReceived(const uint8_t *mac_addr, const uint8_t *data, int len) {
+#endif
+  #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+  const uint8_t *src_mac = recv_info->src_addr;
+  #else
+  const uint8_t *src_mac = mac_addr;
+  #endif
+
   // Verificar se o tamanho dos dados está correto
   if (len == sizeof(JoystickData)) {
     memcpy(&receivedData, data, sizeof(JoystickData));
@@ -337,7 +351,7 @@ void OnDataReceived(const uint8_t *mac_addr, const uint8_t *data, int len) {
     // Log no Serial com MAC do transmissor
     Serial.printf("[%d] Recebido de %02X:%02X:%02X:%02X:%02X:%02X:\n",
                   packetsReceived,
-                  mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+                  src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
     
     // Normalizar dados
     normalizeJoystickData(&receivedData, &normalizedData);

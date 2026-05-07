@@ -12,6 +12,9 @@
 // CONFIGURAÇÕES DO TRANSMISSOR EXPANDIDO
 //----------------------------------------------------------------------
 
+// Inicialização rápida: 1 = sem delay/piscadas de boot, 0 = comportamento normal
+#define FAST_STARTUP 0
+
 // Definições dos pinos para ESP32-S2 Mini (TRANSMISSOR EXPANDIDO)
 #define JOYSTICK_X_PIN 7     // Pino analógico X do joystick principal
 #define JOYSTICK_Y_PIN 9     // Pino analógico Y do joystick principal
@@ -202,7 +205,9 @@ void sendJoystickData() {
 
 void setup() {
   Serial.begin(115200);
+  #if !FAST_STARTUP
   delay(2000);
+  #endif
   Serial.println("=== ESP32-S2 Expanded Joystick Transmitter ===");
   
   WiFi.mode(WIFI_STA);
@@ -239,12 +244,14 @@ void setup() {
   
   if (espnowReady) {
     Serial.println("Transmissor expandido pronto!");
+    #if !FAST_STARTUP
     for(int i = 0; i < 5; i++) {
       digitalWrite(LED_PIN, LED_ON);
       delay(100);
       digitalWrite(LED_PIN, LED_OFF);
       delay(100);
     }
+    #endif
   } else {
     Serial.println("Falha na inicialização!");
     digitalWrite(LED_PIN, LED_ON);
