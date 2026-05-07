@@ -15,10 +15,10 @@
 #define LED_PIN 15          // LED interno para status
 
 // Motores principais (L298N)
-#define MOTOR_RIGHT_IN1   12  // Motor direito
-#define MOTOR_RIGHT_IN2   11
-#define MOTOR_LEFT_IN1     9  // Motor esquerdo
-#define MOTOR_LEFT_IN2     7
+#define MOTOR_RIGHT_IN1   11  // Motor direito
+#define MOTOR_RIGHT_IN2    9
+#define MOTOR_LEFT_IN1     7  // Motor esquerdo
+#define MOTOR_LEFT_IN2     5
 
 // Controles adicionais
 #define SERVO_PIN        6    // Servo motor (controle de câmera/braço)
@@ -288,8 +288,7 @@ void OnDataReceived(const esp_now_recv_info *recv_info, const uint8_t *data, int
 
 bool initESPNow_RX() {
   WiFi.disconnect();
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);
-  WiFi.setSleep(WIFI_PS_NONE);
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);
   esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
   
   if (esp_now_init() != ESP_OK) {
@@ -299,6 +298,7 @@ bool initESPNow_RX() {
   
   esp_now_register_recv_cb(OnDataReceived);
   Serial.println("ESP-NOW expandido inicializado com sucesso!");
+  Serial.println("RF: potência padrão + modem sleep MIN_MODEM");
   return true;
 }
 

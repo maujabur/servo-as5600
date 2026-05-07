@@ -29,11 +29,11 @@
 #define LED_ON  HIGH
 #define LED_OFF LOW
 
-// Definições dos pinos para L298N (receptor) - Pinos agrupados GPIO 1-4
-#define MOTOR_RIGHT_IN1   12   // IN1 - PWM+Direção motor direito
-#define MOTOR_RIGHT_IN2   11   // IN2 - PWM+Direção motor direito
-#define MOTOR_LEFT_IN1     9   // IN3 - PWM+Direção motor esquerdo
-#define MOTOR_LEFT_IN2     7   // IN4 - PWM+Direção motor esquerdo
+// Definições dos pinos para L298N (receptor)
+#define MOTOR_RIGHT_IN1   11   // IN1 - PWM+Direção motor direito
+#define MOTOR_RIGHT_IN2    9   // IN2 - PWM+Direção motor direito
+#define MOTOR_LEFT_IN1     7   // IN3 - PWM+Direção motor esquerdo
+#define MOTOR_LEFT_IN2     5   // IN4 - PWM+Direção motor esquerdo
 
 // MAC Address do receptor (substitua pelo MAC real do seu receptor ESP32)
 // Para descobrir o MAC, use WiFi.macAddress() no receptor
@@ -380,9 +380,8 @@ bool initESPNow_TX() {
   // WiFi já configurado em tx_setup()
   WiFi.disconnect();
   
-  // Otimizações de RF para melhor estabilidade
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Máxima potência de transmissão
-  WiFi.setSleep(WIFI_PS_NONE);           // Desabilitar power saving/modem sleep
+  // Configuração de RF equilibrada (temperatura menor)
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);      // Power save habilitado
   
   // Inicializar ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -405,9 +404,9 @@ bool initESPNow_TX() {
   }
   
   Serial.println("ESP-NOW inicializado com sucesso (TX)");
-  Serial.println("Otimizações de RF aplicadas:");
-  Serial.println("- Potência: 19.5dBm (máxima)");
-  Serial.println("- Modem sleep: DESABILITADO");
+  Serial.println("Configuração de RF aplicada:");
+  Serial.println("- Potência TX: padrão do sistema");
+  Serial.println("- Modem sleep: MIN_MODEM");
   Serial.println("- Canal: 1 (fixo)");
   return true;
 }
@@ -417,9 +416,8 @@ bool initESPNow_RX() {
   // WiFi já configurado em rx_setup()
   WiFi.disconnect();
   
-  // Otimizações de RF para melhor estabilidade
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Máxima potência de transmissão
-  WiFi.setSleep(WIFI_PS_NONE);           // Desabilitar power saving/modem sleep
+  // Configuração de RF equilibrada (temperatura menor)
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);      // Power save habilitado
   
   // Configurar canal fixo para maior estabilidade
   esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
@@ -434,9 +432,9 @@ bool initESPNow_RX() {
   esp_now_register_recv_cb(OnDataReceived);
   
   Serial.println("ESP-NOW inicializado com sucesso (RX)");
-  Serial.println("Otimizações de RF aplicadas:");
-  Serial.println("- Potência: 19.5dBm (máxima)");
-  Serial.println("- Modem sleep: DESABILITADO");
+  Serial.println("Configuração de RF aplicada:");
+  Serial.println("- Potência TX: padrão do sistema");
+  Serial.println("- Modem sleep: MIN_MODEM");
   Serial.println("- Canal: 1 (fixo)");
   Serial.println("Aguardando dados do transmissor...");
   return true;

@@ -25,10 +25,10 @@
 #define LED_OFF LOW
 
 // Definições dos pinos para L298N (receptor)
-#define MOTOR_RIGHT_IN1   12  // IN1 - PWM+Direção motor direito
-#define MOTOR_RIGHT_IN2   11  // IN2 - PWM+Direção motor direito
-#define MOTOR_LEFT_IN1     9  // IN3 - PWM+Direção motor esquerdo
-#define MOTOR_LEFT_IN2     7  // IN4 - PWM+Direção motor esquerdo
+#define MOTOR_RIGHT_IN1   11  // IN1 - PWM+Direção motor direito
+#define MOTOR_RIGHT_IN2    9  // IN2 - PWM+Direção motor direito
+#define MOTOR_LEFT_IN1     7  // IN3 - PWM+Direção motor esquerdo
+#define MOTOR_LEFT_IN2     5  // IN4 - PWM+Direção motor esquerdo
 
 //----------------------------------------------------------------------
 // ESTRUTURAS DE DADOS
@@ -96,18 +96,18 @@ bool espnowReady = false;
 
 // Configuração de calibração dos eixos (valores iniciais)
 AxisConfig x_axis_config = {
-  .center = 2266,           // Centro teórico
+  .center = 2650,           // Centro teórico
   .min_value = 0,           // Mínimo ADC
   .max_value = 4095,        // Máximo ADC
-  .center_deadzone = 200,   // Zona morta centro
+  .center_deadzone = 300,   // Zona morta centro
   .edge_deadzone = 50       // Zona morta extremos
 };
 
 AxisConfig y_axis_config = {
-  .center = 2221,
+  .center = 2650,
   .min_value = 0,
   .max_value = 4095,
-  .center_deadzone = 200,
+  .center_deadzone = 300,
   .edge_deadzone = 50
 };
 
@@ -367,9 +367,8 @@ void OnDataReceived(const esp_now_recv_info *recv_info, const uint8_t *data, int
 bool initESPNow_RX() {
   WiFi.disconnect();
   
-  // Otimizações de RF para melhor estabilidade
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Máxima potência de transmissão
-  WiFi.setSleep(WIFI_PS_NONE);           // Desabilitar power saving/modem sleep
+  // Configuração de RF equilibrada (temperatura menor)
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);      // Power save habilitado
   
   // Configurar canal fixo para maior estabilidade
   esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
@@ -384,9 +383,9 @@ bool initESPNow_RX() {
   esp_now_register_recv_cb(OnDataReceived);
   
   Serial.println("ESP-NOW inicializado com sucesso (RX)");
-  Serial.println("Otimizações de RF aplicadas:");
-  Serial.println("- Potência: 19.5dBm (máxima)");
-  Serial.println("- Modem sleep: DESABILITADO");
+  Serial.println("Configuração de RF aplicada:");
+  Serial.println("- Potência TX: padrão do sistema");
+  Serial.println("- Modem sleep: MIN_MODEM");
   Serial.println("- Canal: 1 (fixo)");
   Serial.println("Aguardando dados do transmissor...");
   return true;

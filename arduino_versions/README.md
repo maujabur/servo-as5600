@@ -32,7 +32,7 @@ Sistema de controle remoto usando ESP32-S2 Mini e ESP-NOW, com versões para dif
 #### **`receive/`** - Receptor Básico  
 - **Arquivo**: `receive.ino`
 - **Hardware**: ESP32-S2 Mini + L298N + 2 motores DC
-- **Pinos**: GPIO 12,11,9,7 (motores) + GPIO 15 (LED)
+- **Pinos**: GPIO 11,9,7,5 (motores) + GPIO 15 (LED)
 
 ### Sistema Expandido
 #### **`expanded_transmit/`** - Transmissor Expandido
@@ -129,7 +129,7 @@ Para motores 5V com baterias lítio (8.4V), altere:
 **Ambas as versões:**
 - ⏰ Timeout: Para motores sem sinal (1s)
 - 🔋 Proteção tensão: FATOR_DE_POTENCIA  
-- 📡 RF otimizado: Máxima estabilidade
+- 📡 RF equilibrado: potência padrão + modem sleep (MIN_MODEM)
 
 **Sistema expandido adiciona:**
 - 🛑 Parada de emergência (botão joystick)
@@ -196,10 +196,10 @@ SW       → GPIO 5
 ### **Receptor (Motores):**
 ```
 L298N → ESP32-S2
-IN1   → GPIO 12 (motor direito)
-IN2   → GPIO 11 (motor direito)
-IN3   → GPIO 9 (motor esquerdo)
-IN4   → GPIO 7 (motor esquerdo)
+IN1   → GPIO 11 (motor direito)
+IN2   → GPIO 9 (motor direito)
+IN3   → GPIO 7 (motor esquerdo)
+IN4   → GPIO 5 (motor esquerdo)
 VCC   → 5V
 GND   → GND
 
@@ -211,7 +211,7 @@ GND   → GND
 - **Comunicação**: ESP-NOW (baixa latência)
 - **Alcance**: ~200m linha de vista
 - **Taxa de atualização**: 20Hz (50ms)
-- **Potência RF**: Máxima (19.5dBm)
+- **Potência RF**: Padrão do sistema
 - **Controle**: Tank drive com 9 regiões (incluindo diagonais)
 - **Segurança**: Timeout de 1 segundo para parar motores
 

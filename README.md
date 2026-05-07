@@ -72,10 +72,10 @@ Observação de montagem do módulo joystick:
   - **VRY -> eixo X**
 
 ### Receptor (Motores):
-- **GPIO 12**: IN1 motor direito
-- **GPIO 11**: IN2 motor direito
-- **GPIO 9**: IN3 motor esquerdo
-- **GPIO 7**: IN4 motor esquerdo
+- **GPIO 11**: IN1 motor direito
+- **GPIO 9**: IN2 motor direito
+- **GPIO 7**: IN3 motor esquerdo
+- **GPIO 5**: IN4 motor esquerdo
 - **GPIO 15**: LED de status
 
 ### Situação de Placa:
@@ -143,18 +143,17 @@ VRY     ->  GPIO 9 (eixo Y)
 SW      ->  GPIO 5 (botão)
 ```
 
-### 3. Conectar a ponte H L298N no receptor (pinos agrupados GPIO 1-4)
+### 3. Conectar a ponte H L298N no receptor
 
 #### Conexões de Controle (ESP32 → L298N)
 ```
 ESP32-S2 → L298N
-Pino 12  → IN1 (PWM+Direção motor direito)
-Pino 11  → IN2 (PWM+Direção motor direito)
-Pino 9   → IN3 (PWM+Direção motor esquerdo)
-Pino 7   → IN4 (PWM+Direção motor esquerdo)
+Pino 11  → IN1 (PWM+Direção motor direito)
+Pino 9   → IN2 (PWM+Direção motor direito)
+Pino 7   → IN3 (PWM+Direção motor esquerdo)
+Pino 5   → IN4 (PWM+Direção motor esquerdo)
 
 IMPORTANTE: ENA e ENB devem estar jumpeados (sempre HIGH)
-VANTAGEM: Pinos agrupados (1-4) no mesmo lado do módulo
 ```
 
 #### Alimentação através do Regulador L298N

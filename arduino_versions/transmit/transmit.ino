@@ -88,9 +88,8 @@ void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
 bool initESPNow_TX() {
   WiFi.disconnect();
   
-  // Otimizações de RF para melhor estabilidade
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Máxima potência de transmissão
-  WiFi.setSleep(WIFI_PS_NONE);           // Desabilitar power saving/modem sleep
+  // Configuração de RF equilibrada (temperatura menor)
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);      // Power save habilitado
   
   // Inicializar ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -113,9 +112,9 @@ bool initESPNow_TX() {
   }
   
   Serial.println("ESP-NOW inicializado com sucesso (TX)");
-  Serial.println("Otimizações de RF aplicadas:");
-  Serial.println("- Potência: 19.5dBm (máxima)");
-  Serial.println("- Modem sleep: DESABILITADO");
+  Serial.println("Configuração de RF aplicada:");
+  Serial.println("- Potência TX: padrão do sistema");
+  Serial.println("- Modem sleep: MIN_MODEM");
   Serial.println("- Canal: 1 (fixo)");
   return true;
 }

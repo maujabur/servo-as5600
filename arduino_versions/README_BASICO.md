@@ -24,7 +24,7 @@
 - ✅ Timeout de segurança (para motores em 1 segundo)
 - ✅ Mapeamento automático de regiões do joystick
 - ✅ Debug detalhado no Serial Monitor
-- ✅ Otimizações de RF para estabilidade
+- ✅ RF equilibrado (potência padrão + modem sleep)
 - ✅ Proteção de tensão com FATOR_DE_POTENCIA
 
 ## 🔧 Configuração
@@ -42,19 +42,19 @@ Observação do módulo joystick:
 
 ### Pinos do Receptor (ESP32-S2)
 ```
-GPIO 12: Motor direito IN1 (PWM)
-GPIO 11: Motor direito IN2 (PWM)
-GPIO 9: Motor esquerdo IN3 (PWM)
-GPIO 7: Motor esquerdo IN4 (PWM)
+GPIO 11: Motor direito IN1 (PWM)
+GPIO 9: Motor direito IN2 (PWM)
+GPIO 7: Motor esquerdo IN3 (PWM)
+GPIO 5: Motor esquerdo IN4 (PWM)
 GPIO 15: LED status (ativo em HIGH)
 ```
 
 ### L298N (ENA/ENB com jumpers)
 ```
-IN1 ← GPIO 12 (PWM+Direção motor direito)
-IN2 ← GPIO 11 (PWM+Direção motor direito)
-IN3 ← GPIO 9 (PWM+Direção motor esquerdo)
-IN4 ← GPIO 7 (PWM+Direção motor esquerdo)
+IN1 ← GPIO 11 (PWM+Direção motor direito)
+IN2 ← GPIO 9 (PWM+Direção motor direito)
+IN3 ← GPIO 7 (PWM+Direção motor esquerdo)
+IN4 ← GPIO 5 (PWM+Direção motor esquerdo)
 ENA: Jumper (sempre HIGH)
 ENB: Jumper (sempre HIGH)
 ```

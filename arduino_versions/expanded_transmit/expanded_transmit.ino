@@ -118,8 +118,7 @@ void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
 
 bool initESPNow_TX() {
   WiFi.disconnect();
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);
-  WiFi.setSleep(WIFI_PS_NONE);
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);
   
   if (esp_now_init() != ESP_OK) {
     Serial.println("Erro ao inicializar ESP-NOW");
@@ -139,6 +138,7 @@ bool initESPNow_TX() {
   }
   
   Serial.println("ESP-NOW expandido inicializado com sucesso!");
+  Serial.println("RF: potência padrão + modem sleep MIN_MODEM");
   return true;
 }
 

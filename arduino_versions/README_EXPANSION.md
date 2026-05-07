@@ -48,7 +48,7 @@ Controles Digitais:
 └── Switch (GPIO 16) - Liga/desliga geral
 
 Saídas do Receptor:
-├── Motores L298N (GPIO 12,11,9,7) - Tank drive
+├── Motores L298N (GPIO 11,9,7,5) - Tank drive
 ├── Servo Motor (GPIO 6) - Câmera/braço robótico
 ├── LEDs Iluminação (GPIO 10) - Faróis
 ├── Buzzer (GPIO 8) - Sirene
