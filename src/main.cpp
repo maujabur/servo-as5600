@@ -520,7 +520,7 @@ bool isLongCommand(const char* cmd) {
     "mm","kp","bm",
     "goto","go","move","cancelmove","qc",
     "cw","ccw",
-    "inc",
+    "inc","dec",
     "autotune","aut","at",
     "autotune_apply","autapply","ata",
     "pidpos_kp","pp","pidpos_ki","pi","pidpos_kd","pd",
