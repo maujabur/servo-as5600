@@ -1,19 +1,25 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
+#include <Preferences.h>
+#include <WebServer.h>
 #include <WiFi.h>
 
 #include <As5600Sensor.h>
 #include <CascadePositionController.h>
+#include <RepetitiveMotionController.h>
 
 #include <ctype.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "repetitive_motion_web_page.h"
+
 constexpr char OTA_AP_SSID[]     = "Motor-Control-1";
 constexpr char OTA_AP_PASSWORD[] = "12345678";
 constexpr char OTA_HOSTNAME[]    = "as5600-motor-control";
 constexpr char OTA_PASSWORD[]    = "as5600-update";
+constexpr uint8_t WIFI_AP_CHANNEL = 6;
 constexpr uint8_t OTA_BUTTON_PIN = 7;
 constexpr uint32_t OTA_BUTTON_HOLD_MS = 1500;
 
@@ -111,6 +117,7 @@ struct MotorControlState {
 
 MotorControlState g_state;
 bool g_ota_mode_active = false;
+bool g_ota_update_in_progress = false;
 bool g_ota_button_pressed = false;
 uint32_t g_ota_button_pressed_ms = 0;
 
@@ -163,6 +170,177 @@ struct AutotuneState {
   float vel_kd = 0.0f;
 };
 AutotuneState g_autotune;
+bool g_autotune_abort_requested = false;
+
+// Adaptadores: a camada de movimento repetitivo conhece apenas estes comandos
+// genericos, sem depender do AS5600 ou do controlador PID concreto.
+void startAutomaticPositionMove(float target_deg, float rpm);
+bool isAutomaticPositionMoveActive();
+void stopAutomaticPositionMove();
+void applyMotorOutput(int16_t signed_pwm);
+float clampf(float v, float lo, float hi);
+
+RepetitiveMotionController g_repetitive_motion({
+  startAutomaticPositionMove,
+  isAutomaticPositionMoveActive,
+  stopAutomaticPositionMove
+});
+
+Preferences g_repetitive_preferences;
+bool g_repetitive_preferences_ready = false;
+bool g_repetitive_run_on_boot = false;
+bool g_persisted_repetitive_running = false;
+WebServer g_web_server(80);
+bool g_web_server_started = false;
+
+void loadRepetitiveMotionPreferences() {
+  g_repetitive_preferences_ready =
+    g_repetitive_preferences.begin("repeat_motion", false);
+  if (!g_repetitive_preferences_ready) {
+    Serial.println("AVISO: nao foi possivel abrir a configuracao persistente do ciclo");
+    return;
+  }
+
+  RepetitiveMotionConfig c = g_repetitive_motion.config();
+  c.start_deg = g_repetitive_preferences.getFloat("start_deg", c.start_deg);
+  c.end_deg = g_repetitive_preferences.getFloat("end_deg", c.end_deg);
+  const float max_rpm = g_position_servo.settings().max_target_rpm;
+  c.start_to_end_rpm = clampf(
+    g_repetitive_preferences.getFloat("rpm_out", c.start_to_end_rpm), 0.1f, max_rpm);
+  c.end_to_start_rpm = clampf(
+    g_repetitive_preferences.getFloat("rpm_back", c.end_to_start_rpm), 0.1f, max_rpm);
+  c.dwell_at_start_ms = min(
+    g_repetitive_preferences.getULong("wait_start", c.dwell_at_start_ms), 3600000UL);
+  c.dwell_at_end_ms = min(
+    g_repetitive_preferences.getULong("wait_end", c.dwell_at_end_ms), 3600000UL);
+  g_repetitive_motion.setConfig(c);
+  g_repetitive_run_on_boot = g_repetitive_preferences.getBool("running", false);
+  g_persisted_repetitive_running = g_repetitive_run_on_boot;
+}
+
+void saveRepetitiveMotionConfig() {
+  if (!g_repetitive_preferences_ready) return;
+  const RepetitiveMotionConfig& c = g_repetitive_motion.config();
+  g_repetitive_preferences.putFloat("start_deg", c.start_deg);
+  g_repetitive_preferences.putFloat("end_deg", c.end_deg);
+  g_repetitive_preferences.putFloat("rpm_out", c.start_to_end_rpm);
+  g_repetitive_preferences.putFloat("rpm_back", c.end_to_start_rpm);
+  g_repetitive_preferences.putULong("wait_start", c.dwell_at_start_ms);
+  g_repetitive_preferences.putULong("wait_end", c.dwell_at_end_ms);
+}
+
+void setRepetitiveRunning(bool running, bool persist = true) {
+  g_repetitive_motion.setRunning(running, millis());
+  if (persist && g_repetitive_preferences_ready &&
+      running != g_persisted_repetitive_running) {
+    g_repetitive_preferences.putBool("running", running);
+    g_persisted_repetitive_running = running;
+  }
+}
+
+bool parseWebNumber(const char* name, float* value) {
+  if (!value || !g_web_server.hasArg(name)) return false;
+  const String text = g_web_server.arg(name);
+  char* end = nullptr;
+  const float parsed = strtof(text.c_str(), &end);
+  if (end == text.c_str() || !end || *end != '\0' || !isfinite(parsed)) return false;
+  *value = parsed;
+  return true;
+}
+
+void sendWebStatus(int status_code = 200) {
+  const RepetitiveMotionConfig& c = g_repetitive_motion.config();
+  float angle_deg = 0.0f;
+  const bool sensor_ok = g_as5600.detected() && g_as5600.readAngleDeg(&angle_deg);
+  String json;
+  json.reserve(320);
+  json += F("{\"running\":");
+  json += g_repetitive_motion.running() ? F("true") : F("false");
+  json += F(",\"phase\":\"");
+  json += g_repetitive_motion.phaseText();
+  json += F("\",\"sensor\":");
+  json += sensor_ok ? F("true") : F("false");
+  json += F(",\"angle\":"); json += String(angle_deg, 2);
+  json += F(",\"start\":"); json += String(c.start_deg, 2);
+  json += F(",\"end\":"); json += String(c.end_deg, 2);
+  json += F(",\"rpmOut\":"); json += String(c.start_to_end_rpm, 2);
+  json += F(",\"rpmBack\":"); json += String(c.end_to_start_rpm, 2);
+  json += F(",\"waitStart\":"); json += String(c.dwell_at_start_ms);
+  json += F(",\"waitEnd\":"); json += String(c.dwell_at_end_ms);
+  json += F(",\"maxRpm\":"); json += String(g_position_servo.settings().max_target_rpm, 2);
+  json += F(",\"otaBusy\":");
+  json += g_ota_update_in_progress ? F("true") : F("false");
+  json += '}';
+  g_web_server.send(status_code, "application/json", json);
+}
+
+void sendWebError(int status_code, const char* message) {
+  String json = F("{\"error\":\"");
+  json += message;
+  json += F("\"}");
+  g_web_server.send(status_code, "application/json", json);
+}
+
+void setupWebControl() {
+  if (g_web_server_started) return;
+
+  g_web_server.on("/", HTTP_GET, []() {
+    g_web_server.send_P(200, "text/html; charset=utf-8", REPETITIVE_MOTION_WEB_PAGE);
+  });
+  g_web_server.on("/api/status", HTTP_GET, []() { sendWebStatus(); });
+  g_web_server.on("/api/run", HTTP_POST, []() {
+    if (!g_web_server.hasArg("running")) {
+      sendWebError(400, "Parametro running ausente");
+      return;
+    }
+    const bool requested = g_web_server.arg("running") == "1";
+    if (requested && g_ota_update_in_progress) {
+      sendWebError(409, "Atualizacao OTA em andamento");
+      return;
+    }
+    if (requested && !g_as5600.detected()) {
+      sendWebError(409, "AS5600 nao detectado");
+      return;
+    }
+    setRepetitiveRunning(requested);
+    sendWebStatus();
+  });
+  g_web_server.on("/api/config", HTTP_POST, []() {
+    float start = 0.0f, end = 0.0f, rpm_out = 0.0f, rpm_back = 0.0f;
+    float wait_start = 0.0f, wait_end = 0.0f;
+    if (!parseWebNumber("start", &start) || !parseWebNumber("end", &end) ||
+        !parseWebNumber("rpmOut", &rpm_out) || !parseWebNumber("rpmBack", &rpm_back) ||
+        !parseWebNumber("waitStart", &wait_start) || !parseWebNumber("waitEnd", &wait_end)) {
+      sendWebError(400, "Parametros invalidos ou incompletos");
+      return;
+    }
+    const float max_rpm = g_position_servo.settings().max_target_rpm;
+    if (start < 0.0f || start >= 360.0f || end < 0.0f || end >= 360.0f ||
+        rpm_out < 0.1f || rpm_out > max_rpm || rpm_back < 0.1f || rpm_back > max_rpm ||
+        wait_start < 0.0f || wait_start > 3600000.0f ||
+        wait_end < 0.0f || wait_end > 3600000.0f) {
+      sendWebError(422, "Valor fora da faixa permitida");
+      return;
+    }
+    RepetitiveMotionConfig c = g_repetitive_motion.config();
+    c.start_deg = start;
+    c.end_deg = end;
+    c.start_to_end_rpm = rpm_out;
+    c.end_to_start_rpm = rpm_back;
+    c.dwell_at_start_ms = (uint32_t)lroundf(wait_start);
+    c.dwell_at_end_ms = (uint32_t)lroundf(wait_end);
+    g_repetitive_motion.setConfig(c);
+    saveRepetitiveMotionConfig();
+    sendWebStatus();
+  });
+  g_web_server.onNotFound([]() {
+    g_web_server.sendHeader("Location", "/", true);
+    g_web_server.send(302, "text/plain", "");
+  });
+  g_web_server.begin();
+  g_web_server_started = true;
+  Serial.println("WEB: painel disponivel em http://192.168.4.1/");
+}
 
 // ─── utilitarios ────────────────────────────────────────────────────────────
 
@@ -493,7 +671,7 @@ void applyBrakeOutput() {
 }
 
 void stopMotorForOta() {
-  g_position_servo.cancel();
+  g_repetitive_motion.stop();
   g_autotune.active = false;
   g_move_tracking_active = false;
   g_state.target_percent = 0.0f;
@@ -504,7 +682,7 @@ void stopMotorForOta() {
 
 bool setupOtaAccessPoint() {
   WiFi.mode(WIFI_AP);
-  if (!WiFi.softAP(OTA_AP_SSID, OTA_AP_PASSWORD)) {
+  if (!WiFi.softAP(OTA_AP_SSID, OTA_AP_PASSWORD, WIFI_AP_CHANNEL)) {
     Serial.println("OTA: falha ao criar ponto de acesso");
     return false;
   }
@@ -512,6 +690,7 @@ bool setupOtaAccessPoint() {
   ArduinoOTA.setHostname(OTA_HOSTNAME);
   ArduinoOTA.setPassword(OTA_PASSWORD);
   ArduinoOTA.onStart([]() {
+    g_ota_update_in_progress = true;
     stopMotorForOta();
     Serial.println("OTA: atualizacao iniciada; motores desativados");
   });
@@ -527,16 +706,49 @@ bool setupOtaAccessPoint() {
                   (unsigned int)error);
   });
   ArduinoOTA.begin();
+  setupWebControl();
 
-  Serial.printf("OTA AP: SSID=%s  IP=%s  porta=3232\n",
-                OTA_AP_SSID, WiFi.softAPIP().toString().c_str());
+  Serial.printf("OTA/WEB AP: SSID=%s  canal=%u  IP=%s  OTA=3232 WEB=80\n",
+                OTA_AP_SSID, WIFI_AP_CHANNEL, WiFi.softAPIP().toString().c_str());
   return true;
+}
+
+void startAutomaticPositionMove(float target_deg, float rpm) {
+  float current_deg = 0.0f;
+  if (!g_as5600.detected() || !g_as5600.readAngleDeg(&current_deg)) {
+    setRepetitiveRunning(false);
+    Serial.println("ERRO: ciclo automatico parado; falha ao ler AS5600");
+    return;
+  }
+
+  const float limited_rpm = clampf(rpm, 0.1f, g_position_servo.settings().max_target_rpm);
+  // O servo trabalha internamente com angulo acumulado. Convertemos o ponto
+  // absoluto configurado para o equivalente mais proximo da posicao atual,
+  // inclusive quando o trajeto cruza 0/360 graus.
+  const float accumulated_target = current_deg + shortestAngleDeltaDeg(current_deg, target_deg);
+  g_position_servo.startMove(accumulated_target, limited_rpm,
+                             CascadePositionController::MoveDirection::Shortest);
+  g_position_servo.primeAccumulatedAngle(current_deg);
+  g_move_done_reported = false;
+  g_move_start_ms = millis();
+}
+
+bool isAutomaticPositionMoveActive() {
+  return g_position_servo.isActive();
+}
+
+void stopAutomaticPositionMove() {
+  g_position_servo.cancel();
+  g_state.target_percent = 0.0f;
+  g_state.current_percent = 0.0f;
+  g_state.drive_phase = DrivePhase::IDLE;
+  applyMotorOutput(0);
 }
 
 void handleOtaMaintenanceMode() {
   if (g_ota_mode_active) {
     ArduinoOTA.handle();
-    applyMotorOutput(0);
+    if (g_web_server_started) g_web_server.handleClient();
     return;
   }
 
@@ -557,11 +769,10 @@ void handleOtaMaintenanceMode() {
     return;
   }
 
-  stopMotorForOta();
   g_ota_mode_active = true;
-  Serial.println("OTA: modo de manutencao ativado; controle do motor bloqueado");
+  Serial.println("OTA/WEB: ativando AP; controle do motor permanece disponivel");
   if (!setupOtaAccessPoint()) {
-    Serial.println("OTA: reinicie a placa para voltar ao modo normal");
+    Serial.println("OTA/WEB: falha ao ativar AP");
   }
 }
 
@@ -643,6 +854,8 @@ bool isLongCommand(const char* cmd) {
     "kick_pwm","kpp","kick_rpm","krp","kick_ms","kms","samples_to_stop","sts",
     "maxrpm","mr","physrpm","pr",
     "drpm","default_rpm",
+    "run","running","cycle","cstart","cend","rpmout","rpmback",
+    "waitstart","waitend",
     nullptr
   };
   for (int i = 0; longs[i]; ++i) {
@@ -709,6 +922,15 @@ void printStatus() {
   Serial.printf("Kick(pos): %.1f%% pwm / %ums   Histerese: %u samples\n",
                 s.kick_pwm_percent, s.kick_ms, s.samples_to_stop);
   Serial.printf("Move default: %.2f rpm\n", g_default_move_max_rpm);
+  const RepetitiveMotionConfig& cycle = g_repetitive_motion.config();
+  Serial.printf("Ciclo: running=%s  fase=%s\n",
+                g_repetitive_motion.running() ? "ON" : "OFF",
+                g_repetitive_motion.phaseText());
+  Serial.printf("  inicio=%.2f deg  fim=%.2f deg  rpm ida=%.2f  rpm volta=%.2f\n",
+                cycle.start_deg, cycle.end_deg,
+                cycle.start_to_end_rpm, cycle.end_to_start_rpm);
+  Serial.printf("  espera inicio=%u ms  espera fim=%u ms\n",
+                cycle.dwell_at_start_ms, cycle.dwell_at_end_ms);
 }
 
 void printHelp() {
@@ -756,6 +978,13 @@ void printHelp() {
   Serial.println("    dec <ddeg> [rpm]          -> move incremental CCW (negativo=CW, ex.: dec 90 1.8)");
   Serial.println("                              -> suporta multiplas voltas: inc 450 1.8 (1 volta + 90 graus)");
   Serial.println("    qc | cancelmove           -> cancela movimento de posicao");
+  Serial.println();
+  Serial.println("  Movimento repetitivo:");
+  Serial.println("    run | running on|off      -> liga/desliga o ciclo (off para o motor)");
+  Serial.println("    cycle <ini> <fim> <rpm_ida> <rpm_volta> <espera_ini_ms> <espera_fim_ms>");
+  Serial.println("    cstart | cend <deg>       -> configura os pontos");
+  Serial.println("    rpmout | rpmback <rpm>    -> RPM inicio->fim / fim->inicio");
+  Serial.println("    waitstart | waitend <ms>  -> pausa no inicio / no fim");
   Serial.println("    autotune | aut [step] [rpm] -> sugestao PID pos+vel (padrao: 30 deg, 1.8 rpm)");
   Serial.println("    autotune_apply | ata      -> aplica ultima sugestao de PID pos+vel");
   Serial.println();
@@ -852,6 +1081,89 @@ void parseAndHandleCommand(char* line) {
     printStatus(); return;
   }
 
+  // ── ciclo automatico ───────────────────────────────────────────────────
+
+  if (!strcmp(cmd,"run") || !strcmp(cmd,"running")) {
+    char* val = nextArg();
+    if (!val) {
+      Serial.printf("OK: running=%s  fase=%s\n",
+                    g_repetitive_motion.running() ? "on" : "off",
+                    g_repetitive_motion.phaseText());
+      return;
+    }
+    if (!strcmp(val,"on") || !strcmp(val,"1") || !strcmp(val,"true")) {
+      if (!g_as5600.detected()) {
+        printErrorAndPrompt("ERRO: AS5600 nao detectado no I2C");
+        return;
+      }
+      setRepetitiveRunning(true);
+      Serial.printf("OK: running=%s\n", g_repetitive_motion.running() ? "on" : "off");
+    } else if (!strcmp(val,"off") || !strcmp(val,"0") || !strcmp(val,"false")) {
+      setRepetitiveRunning(false);
+      Serial.println("OK: running=off; motor parado");
+    } else {
+      printErrorAndPrompt("ERRO: use run on|off");
+    }
+    return;
+  }
+
+  if (!strcmp(cmd,"cycle")) {
+    char* tokens[6];
+    tokens[0] = nextArg();
+    for (uint8_t i = 1; i < 6; ++i) tokens[i] = strtok_r(nullptr, " \t", &ctx);
+    if (!tokens[0]) {
+      const RepetitiveMotionConfig& c = g_repetitive_motion.config();
+      Serial.printf("OK: cycle %.2f %.2f %.2f %.2f %u %u\n",
+                    c.start_deg, c.end_deg, c.start_to_end_rpm, c.end_to_start_rpm,
+                    c.dwell_at_start_ms, c.dwell_at_end_ms);
+      return;
+    }
+    for (uint8_t i = 1; i < 6; ++i) {
+      if (!tokens[i]) {
+        printErrorAndPrompt("ERRO: use cycle <ini> <fim> <rpm_ida> <rpm_volta> <espera_ini_ms> <espera_fim_ms>");
+        return;
+      }
+    }
+    RepetitiveMotionConfig c = g_repetitive_motion.config();
+    c.start_deg = (float)atof(tokens[0]);
+    c.end_deg = (float)atof(tokens[1]);
+    const float max_rpm = g_position_servo.settings().max_target_rpm;
+    c.start_to_end_rpm = clampf((float)atof(tokens[2]), 0.1f, max_rpm);
+    c.end_to_start_rpm = clampf((float)atof(tokens[3]), 0.1f, max_rpm);
+    c.dwell_at_start_ms = (uint32_t)constrain(atol(tokens[4]), 0L, 3600000L);
+    c.dwell_at_end_ms = (uint32_t)constrain(atol(tokens[5]), 0L, 3600000L);
+    g_repetitive_motion.setConfig(c);
+    saveRepetitiveMotionConfig();
+    Serial.println("OK: ciclo configurado");
+    return;
+  }
+
+  if (!strcmp(cmd,"cstart") || !strcmp(cmd,"cend") ||
+      !strcmp(cmd,"rpmout") || !strcmp(cmd,"rpmback") ||
+      !strcmp(cmd,"waitstart") || !strcmp(cmd,"waitend")) {
+    char* val = nextArg();
+    RepetitiveMotionConfig c = g_repetitive_motion.config();
+    if (!val) {
+      if (!strcmp(cmd,"cstart")) Serial.printf("OK: cstart=%.2f deg\n", c.start_deg);
+      else if (!strcmp(cmd,"cend")) Serial.printf("OK: cend=%.2f deg\n", c.end_deg);
+      else if (!strcmp(cmd,"rpmout")) Serial.printf("OK: rpmout=%.2f rpm\n", c.start_to_end_rpm);
+      else if (!strcmp(cmd,"rpmback")) Serial.printf("OK: rpmback=%.2f rpm\n", c.end_to_start_rpm);
+      else if (!strcmp(cmd,"waitstart")) Serial.printf("OK: waitstart=%u ms\n", c.dwell_at_start_ms);
+      else Serial.printf("OK: waitend=%u ms\n", c.dwell_at_end_ms);
+      return;
+    }
+    if (!strcmp(cmd,"cstart")) c.start_deg = (float)atof(val);
+    else if (!strcmp(cmd,"cend")) c.end_deg = (float)atof(val);
+    else if (!strcmp(cmd,"rpmout")) c.start_to_end_rpm = clampf((float)atof(val), 0.1f, g_position_servo.settings().max_target_rpm);
+    else if (!strcmp(cmd,"rpmback")) c.end_to_start_rpm = clampf((float)atof(val), 0.1f, g_position_servo.settings().max_target_rpm);
+    else if (!strcmp(cmd,"waitstart")) c.dwell_at_start_ms = (uint32_t)constrain(atol(val), 0L, 3600000L);
+    else c.dwell_at_end_ms = (uint32_t)constrain(atol(val), 0L, 3600000L);
+    g_repetitive_motion.setConfig(c);
+    saveRepetitiveMotionConfig();
+    Serial.println("OK: ciclo atualizado");
+    return;
+  }
+
   if (!strcmp(cmd,"g")) {
     if (!g_as5600.detected()) {
       Serial.println("ERRO: AS5600 nao detectado no I2C");
@@ -882,6 +1194,7 @@ void parseAndHandleCommand(char* line) {
       printErrorAndPrompt("ERRO: autotune ja em andamento");
       return;
     }
+    setRepetitiveRunning(false);
 
     char* step_token = nextArg();
     char* rpm_token  = strtok_r(nullptr, " \t", &ctx);
@@ -952,6 +1265,7 @@ void parseAndHandleCommand(char* line) {
       printErrorAndPrompt("ERRO: AS5600 nao detectado no I2C");
       return;
     }
+    setRepetitiveRunning(false);
 
     char* deg_token = nextArg();
     char* extra1 = strtok_r(nullptr, " \t", &ctx);
@@ -1002,6 +1316,7 @@ void parseAndHandleCommand(char* line) {
       printErrorAndPrompt("ERRO: AS5600 nao detectado no I2C");
       return;
     }
+    setRepetitiveRunning(false);
 
     char* delta_token = nextArg();
     char* rpm_token = strtok_r(nullptr, " \t", &ctx);
@@ -1050,6 +1365,7 @@ void parseAndHandleCommand(char* line) {
       printErrorAndPrompt("ERRO: AS5600 nao detectado no I2C");
       return;
     }
+    setRepetitiveRunning(false);
 
     char* delta_token = nextArg();
     char* rpm_token = strtok_r(nullptr, " \t", &ctx);
@@ -1094,9 +1410,9 @@ void parseAndHandleCommand(char* line) {
   }
 
   if (!strcmp(cmd,"qc") || !strcmp(cmd,"cancelmove")) {
-    g_position_servo.cancel();
-    g_state.target_percent = 0.0f;
-    Serial.println("OK: movimento de posicao cancelado");
+    setRepetitiveRunning(false);
+    g_autotune_abort_requested = g_autotune.active;
+    Serial.println("OK: movimento/ciclo cancelado");
     return;
   }
 
@@ -1340,7 +1656,8 @@ void parseAndHandleCommand(char* line) {
   }
 
   if (!strcmp(cmd,"stop") || !strcmp(cmd,"x")) {
-    g_position_servo.cancel();
+    setRepetitiveRunning(false);
+    g_autotune_abort_requested = g_autotune.active;
     g_state.target_percent  = 0.0f;
     g_state.current_percent = 0.0f;
     g_state.drive_phase     = DrivePhase::IDLE;
@@ -1350,7 +1667,7 @@ void parseAndHandleCommand(char* line) {
   }
 
   if (!strcmp(cmd,"brake") || !strcmp(cmd,"b")) {
-    g_position_servo.cancel();
+    setRepetitiveRunning(false);
     g_state.target_percent  = 0.0f;
     g_state.current_percent = 0.0f;
     if (g_state.brake_ms > 0) {
@@ -1366,7 +1683,7 @@ void parseAndHandleCommand(char* line) {
   }
 
   if (!strcmp(cmd,"pwm") || !strcmp(cmd,"p")) {
-    g_position_servo.cancel();
+    setRepetitiveRunning(false);
     char* val = nextArg();
     if (!val) { printErrorAndPrompt("ERRO: use p <0..100>"); return; }
     setTargetFromUnsignedPercent((float)atof(val));
@@ -1377,7 +1694,7 @@ void parseAndHandleCommand(char* line) {
   }
 
   if (!strcmp(cmd,"set") || !strcmp(cmd,"v")) {
-    g_position_servo.cancel();
+    setRepetitiveRunning(false);
     char* val = nextArg();
     if (!val) { printErrorAndPrompt("ERRO: use v <-100..100>"); return; }
     const float pct = clampf((float)atof(val), -100.0f, 100.0f);
@@ -1389,7 +1706,7 @@ void parseAndHandleCommand(char* line) {
   }
 
   if (!strcmp(cmd,"rev") || !strcmp(cmd,"r")) {
-    g_position_servo.cancel();
+    setRepetitiveRunning(false);
     g_state.direction_sign *= -1;
     g_state.target_percent  = -g_state.target_percent;
     Serial.printf("OK: rev -> %s\n",
@@ -1398,7 +1715,7 @@ void parseAndHandleCommand(char* line) {
   }
 
   if (!strcmp(cmd,"dir") || !strcmp(cmd,"d")) {
-    g_position_servo.cancel();
+    setRepetitiveRunning(false);
     char* val = nextArg();
     if (!val) { printErrorAndPrompt("ERRO: use d f|r"); return; }
     if (!strcmp(val,"f") || !strcmp(val,"fwd") || !strcmp(val,"frente")) {
@@ -1773,6 +2090,7 @@ void setup() {
   pos_settings.velocity_num_samples = 6;
   
   g_position_servo.setSettings(pos_settings);
+  loadRepetitiveMotionPreferences();
 
   g_as5600.begin(Wire, I2C_SDA_PIN, I2C_SCL_PIN);
 
@@ -1787,18 +2105,32 @@ void setup() {
 
   WiFi.mode(WIFI_OFF);
 
+  // O painel e o OTA ficam disponiveis continuamente. Somente o inicio de uma
+  // transferencia OTA interrompe o motor (callback ArduinoOTA.onStart).
+  g_ota_mode_active = setupOtaAccessPoint();
+
   Serial.println("\n=== Motor PWM Tester ===");
   Serial.println("Placa: ESP32-C3 Super Mini  |  Motor padrao: IN3/IN4");
   Serial.printf("PWM: freq=%u Hz  resolucao=%u bits\n", g_pwm_frequency_hz, PWM_RESOLUTION_BITS);
   Serial.printf("I2C: SDA=%u SCL=%u\n", I2C_SDA_PIN, I2C_SCL_PIN);
-  Serial.printf("OTA: segure GPIO %u em GND por %u ms para ativar\n",
-                OTA_BUTTON_PIN, OTA_BUTTON_HOLD_MS);
+  Serial.printf("WiFi: AP sempre ativo  SSID=%s  canal=%u  painel=http://192.168.4.1/\n",
+                OTA_AP_SSID, WIFI_AP_CHANNEL);
   if (g_as5600.detected()) {
     Serial.printf("AS5600 detectado no endereco 0x%02X\n", g_as5600.address());
   } else {
     Serial.printf("AS5600 NAO detectado no endereco 0x%02X\n", g_as5600.address());
   }
   Serial.println("PosCtrl pronto (motor nominal 2 rpm)");
+
+  if (g_repetitive_run_on_boot) {
+    if (g_as5600.detected()) {
+      Serial.println("Ciclo persistente: running=on; iniciando homing no ponto inicial");
+      setRepetitiveRunning(true, false);
+    } else {
+      Serial.println("ERRO: ciclo salvo como running=on, mas AS5600 nao foi detectado");
+    }
+  }
+
   printHelp();
   printStatus();
   g_serial_prompt_pending = true;
@@ -1806,15 +2138,11 @@ void setup() {
 
 void loop() {
   handleOtaMaintenanceMode();
-  if (g_ota_mode_active) {
-    delay(1);
-    return;
-  }
 
-  // Não processa serial durante movimento para não interromper a cascata PID
-  if (!g_position_servo.isActive()) {
-    processSerialInput();
-  }
+  // A serial permanece responsiva durante o movimento: stop/run off/qc podem
+  // cancelar imediatamente qualquer comando em execucao.
+  processSerialInput();
+  g_repetitive_motion.update(millis());
   updatePositionMoveControl();
   updateRampControl();
 
@@ -1827,6 +2155,16 @@ void loop() {
     static float measured_rpm_cmd[128];
     static float measured_rpm_real[128];
     static int sample_count = 0;
+
+    if (g_autotune_abort_requested) {
+      g_autotune_abort_requested = false;
+      g_autotune.active = false;
+      move_started = false;
+      sample_count = 0;
+      Serial.println("AUTOTUNE: cancelado");
+      g_serial_prompt_pending = true;
+      return;
+    }
 
     float current_deg = 0.0f;
     if (!g_as5600.readAngleDeg(&current_deg)) {
