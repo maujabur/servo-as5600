@@ -6,6 +6,7 @@ bool As5600Sensor::begin(TwoWire& wire, uint8_t sda_pin, uint8_t scl_pin,
   address_ = address;
 
   wire_->begin(sda_pin, scl_pin);
+  wire_->setClock(400000); // Fast-mode: margem segura para o controle ADRC a 500 Hz.
 
   wire_->beginTransmission(address_);
   detected_ = (wire_->endTransmission() == 0);

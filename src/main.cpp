@@ -6,7 +6,7 @@
 #include <esp_wifi.h>
 
 #include <As5600Sensor.h>
-#include <CascadePositionController.h>
+#include <AdrcPositionController.h>
 #include <RepetitiveMotionController.h>
 
 #include <ctype.h>
@@ -53,7 +53,7 @@ constexpr uint8_t  MOTOR_B_IN2            = 4;
 
 constexpr uint32_t SERIAL_BAUD            = 115200;
 constexpr size_t   SERIAL_LINE_BUFFER     = 96;
-constexpr uint32_t CONTROL_PERIOD_MS      = 10;
+constexpr uint32_t CONTROL_PERIOD_MS      = 2;  // ADRC e saida da ponte a 500 Hz
 constexpr uint32_t SERIAL_STARTUP_WAIT_MS = 3000;
 constexpr uint32_t MOVE_RPM_TELEMETRY_WINDOW_MS = 80;
 constexpr uint32_t MOVE_DEBUG_LOG_PERIOD_MS = 2000;
@@ -147,6 +147,7 @@ size_t g_serial_index = 0;
 As5600Sensor            g_as5600;
 CascadePositionController g_position_servo;
 bool                    g_move_done_reported = false;
+bool                    g_adrc_stall_fault = false;
 bool                    g_serial_prompt_pending = true;
 bool                    g_move_tracking_active = false;
 float                   g_move_peak_rpm_abs = 0.0f;
@@ -194,7 +195,7 @@ AutotuneState g_autotune;
 bool g_autotune_abort_requested = false;
 
 // Adaptadores: a camada de movimento repetitivo conhece apenas estes comandos
-// genericos, sem depender do AS5600 ou do controlador PID concreto.
+// genericos, sem depender do AS5600 ou do controlador ADRC concreto.
 void startAutomaticPositionMove(float target_deg, float rpm);
 bool isAutomaticPositionMoveActive();
 void stopAutomaticPositionMove();
@@ -237,6 +238,15 @@ void loadRepetitiveMotionPreferences() {
   g_repetitive_motion.setConfig(c);
   g_repetitive_run_on_boot = g_repetitive_preferences.getBool("running", false);
   g_persisted_repetitive_running = g_repetitive_run_on_boot;
+
+  CascadePositionSettings adrc = g_position_servo.settings();
+  adrc.control_bandwidth = g_repetitive_preferences.getFloat(
+    "adrc_wc", adrc.control_bandwidth);
+  adrc.observer_bandwidth = g_repetitive_preferences.getFloat(
+    "adrc_wo", adrc.observer_bandwidth);
+  adrc.plant_gain = g_repetitive_preferences.getFloat(
+    "adrc_b0", adrc.plant_gain);
+  g_position_servo.setSettings(adrc);
 }
 
 void saveRepetitiveMotionConfig() {
@@ -248,6 +258,14 @@ void saveRepetitiveMotionConfig() {
   g_repetitive_preferences.putFloat("rpm_back", c.end_to_start_rpm);
   g_repetitive_preferences.putULong("wait_start", c.dwell_at_start_ms);
   g_repetitive_preferences.putULong("wait_end", c.dwell_at_end_ms);
+}
+
+void saveAdrcSettings() {
+  if (!g_repetitive_preferences_ready) return;
+  const CascadePositionSettings& s = g_position_servo.settings();
+  g_repetitive_preferences.putFloat("adrc_wc", s.control_bandwidth);
+  g_repetitive_preferences.putFloat("adrc_wo", s.observer_bandwidth);
+  g_repetitive_preferences.putFloat("adrc_b0", s.plant_gain);
 }
 
 void setRepetitiveRunning(bool running, bool persist = true) {
@@ -293,6 +311,8 @@ void sendWebStatus(int status_code = 200) {
   json += F(",\"maxRpm\":"); json += String(g_position_servo.settings().max_target_rpm, 2);
   json += F(",\"otaBusy\":");
   json += g_ota_update_in_progress ? F("true") : F("false");
+  json += F(",\"stall\":");
+  json += g_adrc_stall_fault ? F("true") : F("false");
   json += '}';
   g_web_server.send(status_code, "application/json", json);
 }
@@ -325,6 +345,7 @@ void setupWebControl() {
       sendWebError(409, "AS5600 nao detectado");
       return;
     }
+    if (requested) g_adrc_stall_fault = false;
     setRepetitiveRunning(requested);
     sendWebStatus();
   });
@@ -346,6 +367,7 @@ void setupWebControl() {
       return;
     }
     const RepetitiveMotionConfig& c = g_repetitive_motion.config();
+    g_adrc_stall_fault = false;
     const String target = g_web_server.arg("target");
     if (target == "start") {
       startAutomaticPositionMove(c.start_deg, c.end_to_start_rpm);
@@ -582,6 +604,12 @@ void updatePositionMoveControl() {
 
   const bool was_active = g_position_servo.isActive();
   const float command_pct = g_position_servo.computeOutputPercent(current_deg, now_ms);
+  if (g_position_servo.isStalled()) {
+    g_adrc_stall_fault = true;
+    setRepetitiveRunning(false);
+    Serial.println("ERRO ADRC: stall detectado; motor e ciclo desativados");
+    return;
+  }
   const int16_t pwm_pid_abs = (int16_t)abs(g_position_servo.pwmOutput());
   if (pwm_pid_abs > g_move_peak_pwm_pid_abs) {
     g_move_peak_pwm_pid_abs = pwm_pid_abs;
@@ -653,7 +681,7 @@ void updatePositionMoveControl() {
                                 ? (g_position_servo.accumulatedDeg() - g_move_start_accumulated_deg)
                                 : g_move_total_net_delta_deg;
     const float desl_abs = fabsf(desl_signed);
-    Serial.printf("OK: alvo atingido em %.2f deg (ang_ini=%.2f deg, desl=%.2f deg, desl_abs=%.2f deg, tempo=%u ms, rpm_pico=%.2f, rpm_medio=%.2f, pwm_pid_pico=%.1f%%, pwm_out_pico=%.1f%%, pwm_out_med=%.1f%%, pwm_sat=%.0f%%)\n",
+    Serial.printf("OK: alvo atingido em %.2f deg (ang_ini=%.2f deg, desl=%.2f deg, desl_abs=%.2f deg, tempo=%u ms, rpm_pico=%.2f, rpm_medio=%.2f, pwm_adrc_pico=%.1f%%, pwm_out_pico=%.1f%%, pwm_out_med=%.1f%%, pwm_sat=%.0f%%)\n",
                   current_deg, ang_ini, desl_signed, desl_abs, elapsed_ms, g_move_peak_rpm_signed, rpm_medio,
                   pwm_pid_pico_pct, pwm_out_pico_pct, pwm_out_medio_pct, pwm_out_sat_pct);
   }
@@ -982,6 +1010,7 @@ bool isLongCommand(const char* cmd) {
     "kick_pwm","kpp","kick_rpm","krp","kick_ms","kms","samples_to_stop","sts",
     "maxrpm","mr","physrpm","pr",
     "drpm","default_rpm",
+    "adrc_wc","awc","adrc_wo","awo","adrc_b0","ab0",
     "run","running","cycle","cstart","cend","rpmout","rpmback",
     "waitstart","waitend",
     nullptr
@@ -1040,12 +1069,10 @@ void printStatus() {
   }
 
   const CascadePositionSettings& s = g_position_servo.settings();
-  Serial.printf("PosCtrl: rated=%.2f rpm  phys=%.2f rpm  stop_win=%.2f deg\n",
+  Serial.printf("ADRC: rated=%.2f rpm  phys=%.2f rpm  stop_win=%.2f deg\n",
                 s.max_target_rpm, s.physical_max_rpm, s.stop_window_deg);
-  Serial.printf("PID_Pos: kp=%.3f ki=%.3f kd=%.3f\n",
-                s.pos_pid.kp, s.pos_pid.ki, s.pos_pid.kd);
-  Serial.printf("PID_Vel: kp=%.3f ki=%.3f kd=%.3f\n",
-                s.vel_pid.kp, s.vel_pid.ki, s.vel_pid.kd);
+  Serial.printf("ADRC: wc=%.2f  wo=%.2f  b0=%.2f\n",
+                s.control_bandwidth, s.observer_bandwidth, s.plant_gain);
   Serial.printf("Rampa: accel=%ums  decel=%ums\n", s.accel_ramp_ms, s.decel_ramp_ms);
   Serial.printf("Kick(pos): %.1f%% pwm / %ums   Histerese: %u samples\n",
                 s.kick_pwm_percent, s.kick_ms, s.samples_to_stop);
@@ -1098,7 +1125,7 @@ void printHelp() {
   Serial.println("    echo | e on|off           -> eco serial");
   Serial.println("    g                         -> le posicao AS5600");
   Serial.println();
-  Serial.println("  Posicionamento com cascata PID (servo real):");
+  Serial.println("  Posicionamento com ADRC:");
   Serial.println("    q | goto <deg> [rpm] [short|cw|ccw]");
   Serial.println("                              -> vai ao alvo (0..360), rpm max e sentido opcionais");
   Serial.println("    cw | ccw <deg> [rpm]      -> atalhos com sentido fixo");
@@ -1113,18 +1140,10 @@ void printHelp() {
   Serial.println("    cstart | cend <deg>       -> configura os pontos");
   Serial.println("    rpmout | rpmback <rpm>    -> RPM inicio->fim / fim->inicio");
   Serial.println("    waitstart | waitend <ms>  -> pausa no inicio / no fim");
-  Serial.println("    autotune | aut [step] [rpm] -> sugestao PID pos+vel (padrao: 30 deg, 1.8 rpm)");
-  Serial.println("    autotune_apply | ata      -> aplica ultima sugestao de PID pos+vel");
-  Serial.println();
-  Serial.println("  PID de posicao (controla RPM desejado a partir do erro):");
-  Serial.println("    pp | pidpos_kp <kp>       -> ganho proporcional [0.75]");
-  Serial.println("    pi | pidpos_ki <ki>       -> ganho integral [0.04]");
-  Serial.println("    pd | pidpos_kd <kd>       -> ganho derivativo [0.04]");
-  Serial.println();
-  Serial.println("  PID de velocidade (controla PWM para manter RPM real):");
-  Serial.println("    vp | pidvel_kp <kp>       -> ganho proporcional [8.0]");
-  Serial.println("    vi | pidvel_ki <ki>       -> ganho integral [1.2]");
-  Serial.println("    vd | pidvel_kd <kd>       -> ganho derivativo [0.08]");
+  Serial.println("  Controle ADRC:");
+  Serial.println("    awc | adrc_wc <valor>     -> banda do controlador [30]");
+  Serial.println("    awo | adrc_wo <valor>     -> banda do observador [100]");
+  Serial.println("    ab0 | adrc_b0 <valor>     -> ganho estimado da planta [250]");
   Serial.println();
   Serial.println("  Configuracao de movimento:");
   Serial.println("    pw | poswin <deg>         -> janela de chegada [1.2]");
@@ -1133,7 +1152,7 @@ void printHelp() {
   Serial.println("    kpp | kick_pwm <pct>      -> kick do posicionamento em PWM% [85]");
   Serial.println("    kms | kick_ms <ms>        -> duracao kick [180ms]");
   Serial.println("    sts | samples_to_stop <n> -> leituras para parar [3]");
-  Serial.println("    drpm| default_rpm <rpm>   -> RPM padrao para q/inc/dec/autotune [1.8]");
+  Serial.println("    drpm| default_rpm <rpm>   -> RPM padrao para q/inc/dec [1.8]");
   Serial.println("    mr  | maxrpm <rpm>        -> limite max de RPM do servo [2.4]");
   Serial.println("    pr  | physrpm <rpm>       -> limite fisico estimado do motor [2.0]");
   Serial.println();
@@ -1309,7 +1328,43 @@ void parseAndHandleCommand(char* line) {
     return;
   }
 
+  if (!strcmp(cmd,"awc") || !strcmp(cmd,"adrc_wc") ||
+      !strcmp(cmd,"awo") || !strcmp(cmd,"adrc_wo") ||
+      !strcmp(cmd,"ab0") || !strcmp(cmd,"adrc_b0")) {
+    char* val = nextArg();
+    CascadePositionSettings s = g_position_servo.settings();
+    float* setting = !strcmp(cmd,"awc") || !strcmp(cmd,"adrc_wc")
+                       ? &s.control_bandwidth
+                       : (!strcmp(cmd,"awo") || !strcmp(cmd,"adrc_wo")
+                            ? &s.observer_bandwidth : &s.plant_gain);
+    const char* name = !strcmp(cmd,"awc") || !strcmp(cmd,"adrc_wc")
+                         ? "wc" : ((!strcmp(cmd,"awo") || !strcmp(cmd,"adrc_wo")) ? "wo" : "b0");
+    if (!val) {
+      Serial.printf("OK: ADRC %s=%.3f\n", name, *setting);
+      return;
+    }
+    if (g_position_servo.isActive() || g_repetitive_motion.running()) {
+      printErrorAndPrompt("ERRO: pare o motor antes de alterar ADRC");
+      return;
+    }
+    float parsed = 0.0f;
+    if (!parseFloatToken(val, &parsed) || parsed <= 0.0f) {
+      printErrorAndPrompt("ERRO: ganho ADRC deve ser positivo");
+      return;
+    }
+    if (setting == &s.control_bandwidth) parsed = clampf(parsed, 1.0f, 100.0f);
+    else if (setting == &s.observer_bandwidth) parsed = clampf(parsed, 1.0f, 300.0f);
+    else parsed = clampf(parsed, 1.0f, 2000.0f);
+    *setting = parsed;
+    g_position_servo.setSettings(s);
+    saveAdrcSettings();
+    Serial.printf("OK: ADRC %s=%.3f (persistente)\n", name, parsed);
+    return;
+  }
+
   if (!strcmp(cmd,"autotune") || !strcmp(cmd,"aut") || !strcmp(cmd,"at")) {
+    printErrorAndPrompt("ERRO: autotune PID indisponivel no backend ADRC");
+    return;
     if (!g_as5600.detected()) {
       printErrorAndPrompt("ERRO: AS5600 nao detectado no I2C");
       return;
@@ -1363,6 +1418,8 @@ void parseAndHandleCommand(char* line) {
   }
 
   if (!strcmp(cmd,"autotune_apply") || !strcmp(cmd,"autapply") || !strcmp(cmd,"ata")) {
+    printErrorAndPrompt("ERRO: autotune PID indisponivel no backend ADRC");
+    return;
     if (g_autotune.active) {
       printErrorAndPrompt("ERRO: aguarde o autotune terminar");
       return;
@@ -1544,7 +1601,17 @@ void parseAndHandleCommand(char* line) {
     return;
   }
 
-  // ── PID de posição ──────────────────────────────────────────────────────
+  if (!strcmp(cmd,"pp") || !strcmp(cmd,"pidpos_kp") ||
+      !strcmp(cmd,"pi") || !strcmp(cmd,"pidpos_ki") ||
+      !strcmp(cmd,"pd") || !strcmp(cmd,"pidpos_kd") ||
+      !strcmp(cmd,"vp") || !strcmp(cmd,"pidvel_kp") ||
+      !strcmp(cmd,"vi") || !strcmp(cmd,"pidvel_ki") ||
+      !strcmp(cmd,"vd") || !strcmp(cmd,"pidvel_kd")) {
+    printErrorAndPrompt("ERRO: comando PID obsoleto; use awc, awo ou ab0");
+    return;
+  }
+
+  // ── Blocos legados (inalcancaveis no backend ADRC) ─────────────────────
 
   if (!strcmp(cmd,"pp") || !strcmp(cmd,"pidpos_kp")) {
     char* val = nextArg();
@@ -2043,7 +2110,7 @@ void updateRampControl() {
 
   const bool servo_active = g_position_servo.isActive();
 
-  // No modo de posicionamento, usa diretamente a saida da cascata PID
+  // No modo de posicionamento, usa diretamente a saida calculada pelo ADRC
   // (sem a rampa manual adicional desta maquina de fases).
   if (servo_active) {
     g_state.current_percent = g_state.target_percent;
@@ -2189,16 +2256,21 @@ void setup() {
   configurePwmOutputs(g_pwm_frequency_hz, PWM_RESOLUTION_BITS);
 
   CascadePositionSettings pos_settings;
+
+  // ADRC: valores iniciais extraidos do prototipo V2.5. A escala de b0 segue
+  // PWM 8-bit internamente, embora a ponte H continue recebendo percentual.
+  pos_settings.control_bandwidth = 30.0f;
+  pos_settings.observer_bandwidth = 100.0f;
+  pos_settings.plant_gain = 250.0f;
   
-  // PID de posição: controla RPM desejado a partir do erro de posição
+  // Campos legados sem efeito no backend ADRC.
   pos_settings.pos_pid.kp = 0.75f;    // Mais firme para o motor lento fechar os ultimos graus
   pos_settings.pos_pid.ki = 0.04f;    // Pequena integral para remover erro residual
   pos_settings.pos_pid.kd = 0.04f;    // Amortecimento leve para nao frear demais
   pos_settings.pos_pid.output_min = -DEFAULT_MAX_TARGET_RPM;
   pos_settings.pos_pid.output_max = DEFAULT_MAX_TARGET_RPM;
   
-  // PID de velocidade: controla PWM para manter RPM real = RPM cmd
-  // Defaults ajustados pelos ultimos testes de bancada para reduzir overspeed.
+  // Campos legados mantidos apenas para compatibilidade binaria/serial.
   pos_settings.vel_pid.kp = 5.0f;
   pos_settings.vel_pid.ki = 0.4f;
   pos_settings.vel_pid.kd = 0.04f;
@@ -2253,7 +2325,7 @@ void setup() {
   } else {
     Serial.printf("AS5600 NAO detectado no endereco 0x%02X\n", g_as5600.address());
   }
-  Serial.println("PosCtrl pronto (motor nominal 2 rpm)");
+  Serial.println("ADRC pronto (motor nominal 2 rpm)");
 
   if (g_repetitive_run_on_boot) {
     if (g_as5600.detected()) {
