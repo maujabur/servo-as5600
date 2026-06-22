@@ -145,7 +145,7 @@ uint32_t g_ota_button_pressed_ms = 0;
 char   g_serial_line[SERIAL_LINE_BUFFER];
 size_t g_serial_index = 0;
 As5600Sensor            g_as5600;
-CascadePositionController g_position_servo;
+AdrcPositionController g_position_servo;
 bool                    g_move_done_reported = false;
 bool                    g_adrc_stall_fault = false;
 bool                    g_serial_prompt_pending = true;
@@ -168,31 +168,13 @@ bool                    g_move_start_accumulated_captured = false;
 float                   g_move_rpm_window_delta_deg = 0.0f;
 uint32_t                g_move_rpm_window_dt_ms = 0;
 int16_t                 g_last_applied_pwm_signed = 0;
-int16_t                 g_move_peak_pwm_pid_abs = 0;
+int16_t                 g_move_peak_pwm_adrc_abs = 0;
 int16_t                 g_move_peak_pwm_out_abs = 0;
 float                   g_move_pwm_out_abs_sum = 0.0f;
 uint32_t                g_move_pwm_out_samples = 0;
 uint32_t                g_move_pwm_out_sat_samples = 0;
 uint32_t                g_pwm_frequency_hz = PWM_DEFAULT_FREQUENCY_HZ;
 uint32_t                g_move_debug_last_print_ms = 0;
-
-// ─── AUTOTUNE STATE ──────────────────────────────────────────────────────
-struct AutotuneState {
-  bool active = false;
-  uint32_t start_ms = 0;
-  float initial_deg = 0.0f;
-  float target_deg = 0.0f;
-  float test_rpm = 0.0f;
-  bool has_suggestion = false;
-  float pos_kp = 0.0f;
-  float pos_ki = 0.0f;
-  float pos_kd = 0.0f;
-  float vel_kp = 0.0f;
-  float vel_ki = 0.0f;
-  float vel_kd = 0.0f;
-};
-AutotuneState g_autotune;
-bool g_autotune_abort_requested = false;
 
 // Adaptadores: a camada de movimento repetitivo conhece apenas estes comandos
 // genericos, sem depender do AS5600 ou do controlador ADRC concreto.
@@ -239,7 +221,7 @@ void loadRepetitiveMotionPreferences() {
   g_repetitive_run_on_boot = g_repetitive_preferences.getBool("running", false);
   g_persisted_repetitive_running = g_repetitive_run_on_boot;
 
-  CascadePositionSettings adrc = g_position_servo.settings();
+  AdrcPositionSettings adrc = g_position_servo.settings();
   adrc.control_bandwidth = g_repetitive_preferences.getFloat(
     "adrc_wc", adrc.control_bandwidth);
   adrc.observer_bandwidth = g_repetitive_preferences.getFloat(
@@ -262,7 +244,7 @@ void saveRepetitiveMotionConfig() {
 
 void saveAdrcSettings() {
   if (!g_repetitive_preferences_ready) return;
-  const CascadePositionSettings& s = g_position_servo.settings();
+  const AdrcPositionSettings& s = g_position_servo.settings();
   g_repetitive_preferences.putFloat("adrc_wc", s.control_bandwidth);
   g_repetitive_preferences.putFloat("adrc_wo", s.observer_bandwidth);
   g_repetitive_preferences.putFloat("adrc_b0", s.plant_gain);
@@ -523,7 +505,7 @@ void updatePositionMoveControl() {
     g_move_start_accumulated_captured = false;
     g_move_rpm_window_delta_deg = 0.0f;
     g_move_rpm_window_dt_ms = 0;
-    g_move_peak_pwm_pid_abs = 0;
+    g_move_peak_pwm_adrc_abs = 0;
     g_move_peak_pwm_out_abs = 0;
     g_move_pwm_out_abs_sum = 0.0f;
     g_move_pwm_out_samples = 0;
@@ -556,7 +538,7 @@ void updatePositionMoveControl() {
 
       // Nao computa rpm_pico durante KICK para evitar inflar metricas de regime.
       if (!g_position_servo.isKicking()) {
-        const CascadePositionSettings& cfg = g_position_servo.settings();
+        const AdrcPositionSettings& cfg = g_position_servo.settings();
         // Para rpm_pico, usa filtro dinamico mais estrito.
         float max_delta_plausible_deg = 3.0f;
         if (cfg.physical_max_rpm > 0.1f) {
@@ -610,9 +592,9 @@ void updatePositionMoveControl() {
     Serial.println("ERRO ADRC: stall detectado; motor e ciclo desativados");
     return;
   }
-  const int16_t pwm_pid_abs = (int16_t)abs(g_position_servo.pwmOutput());
-  if (pwm_pid_abs > g_move_peak_pwm_pid_abs) {
-    g_move_peak_pwm_pid_abs = pwm_pid_abs;
+  const int16_t pwm_adrc_abs = (int16_t)abs(g_position_servo.pwmOutput());
+  if (pwm_adrc_abs > g_move_peak_pwm_adrc_abs) {
+    g_move_peak_pwm_adrc_abs = pwm_adrc_abs;
   }
 
   // Captura posição acumulada inicial (odômetro) na primeira iteração do movimento.
@@ -668,7 +650,7 @@ void updatePositionMoveControl() {
       g_move_peak_rpm_abs = rpm_medio;
       g_move_peak_rpm_signed = peak_sign * rpm_medio;
     }
-    const float pwm_pid_pico_pct = clampf((float)g_move_peak_pwm_pid_abs, 0.0f, 100.0f);
+    const float pwm_adrc_pico_pct = clampf((float)g_move_peak_pwm_adrc_abs, 0.0f, 100.0f);
     const float pwm_out_pico_pct = ((float)g_move_peak_pwm_out_abs * 100.0f) / 255.0f;
     const float pwm_out_medio_pct = (g_move_pwm_out_samples > 0)
                                        ? ((g_move_pwm_out_abs_sum / (float)g_move_pwm_out_samples) * 100.0f / 255.0f)
@@ -683,7 +665,7 @@ void updatePositionMoveControl() {
     const float desl_abs = fabsf(desl_signed);
     Serial.printf("OK: alvo atingido em %.2f deg (ang_ini=%.2f deg, desl=%.2f deg, desl_abs=%.2f deg, tempo=%u ms, rpm_pico=%.2f, rpm_medio=%.2f, pwm_adrc_pico=%.1f%%, pwm_out_pico=%.1f%%, pwm_out_med=%.1f%%, pwm_sat=%.0f%%)\n",
                   current_deg, ang_ini, desl_signed, desl_abs, elapsed_ms, g_move_peak_rpm_signed, rpm_medio,
-                  pwm_pid_pico_pct, pwm_out_pico_pct, pwm_out_medio_pct, pwm_out_sat_pct);
+                  pwm_adrc_pico_pct, pwm_out_pico_pct, pwm_out_medio_pct, pwm_out_sat_pct);
   }
 }
 
@@ -752,7 +734,6 @@ void applyBrakeOutput() {
 
 void stopMotorForOta() {
   g_repetitive_motion.stop();
-  g_autotune.active = false;
   g_move_tracking_active = false;
   g_state.target_percent = 0.0f;
   g_state.current_percent = 0.0f;
@@ -883,7 +864,7 @@ void startAutomaticPositionMove(float target_deg, float rpm) {
   // inclusive quando o trajeto cruza 0/360 graus.
   const float accumulated_target = current_deg + shortestAngleDeltaDeg(current_deg, target_deg);
   g_position_servo.startMove(accumulated_target, limited_rpm,
-                             CascadePositionController::MoveDirection::Shortest);
+                             AdrcPositionController::MoveDirection::Shortest);
   g_position_servo.primeAccumulatedAngle(current_deg);
   g_move_done_reported = false;
   g_move_start_ms = millis();
@@ -1002,10 +983,6 @@ bool isLongCommand(const char* cmd) {
     "goto","go","move","cancelmove","qc",
     "cw","ccw",
     "inc","dec",
-    "autotune","aut","at",
-    "autotune_apply","autapply","ata",
-    "pidpos_kp","pp","pidpos_ki","pi","pidpos_kd","pd",
-    "pidvel_kp","vp","pidvel_ki","vi","pidvel_kd","vd",
     "poswin","pw","accel_pos","ap","decel_pos","dp",
     "kick_pwm","kpp","kick_rpm","krp","kick_ms","kms","samples_to_stop","sts",
     "maxrpm","mr","physrpm","pr",
@@ -1068,7 +1045,7 @@ void printStatus() {
     Serial.println("Move: OFF");
   }
 
-  const CascadePositionSettings& s = g_position_servo.settings();
+  const AdrcPositionSettings& s = g_position_servo.settings();
   Serial.printf("ADRC: rated=%.2f rpm  phys=%.2f rpm  stop_win=%.2f deg\n",
                 s.max_target_rpm, s.physical_max_rpm, s.stop_window_deg);
   Serial.printf("ADRC: wc=%.2f  wo=%.2f  b0=%.2f\n",
@@ -1193,18 +1170,18 @@ void parseAndHandleCommand(char* line) {
     return inline_value[0] ? inline_value : strtok_r(nullptr, " \t", &ctx);
   };
 
-  auto parseMoveDirection = [](const char* token, CascadePositionController::MoveDirection* direction) -> bool {
+  auto parseMoveDirection = [](const char* token, AdrcPositionController::MoveDirection* direction) -> bool {
     if (!token || !direction) return false;
     if (!strcmp(token, "short") || !strcmp(token, "shortest") || !strcmp(token, "nearest")) {
-      *direction = CascadePositionController::MoveDirection::Shortest;
+      *direction = AdrcPositionController::MoveDirection::Shortest;
       return true;
     }
     if (!strcmp(token, "cw") || !strcmp(token, "horario") || !strcmp(token, "cw+")) {
-      *direction = CascadePositionController::MoveDirection::Clockwise;
+      *direction = AdrcPositionController::MoveDirection::Clockwise;
       return true;
     }
     if (!strcmp(token, "ccw") || !strcmp(token, "anti") || !strcmp(token, "antihorario") || !strcmp(token, "ccw-")) {
-      *direction = CascadePositionController::MoveDirection::CounterClockwise;
+      *direction = AdrcPositionController::MoveDirection::CounterClockwise;
       return true;
     }
     return false;
@@ -1332,7 +1309,7 @@ void parseAndHandleCommand(char* line) {
       !strcmp(cmd,"awo") || !strcmp(cmd,"adrc_wo") ||
       !strcmp(cmd,"ab0") || !strcmp(cmd,"adrc_b0")) {
     char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
+    AdrcPositionSettings s = g_position_servo.settings();
     float* setting = !strcmp(cmd,"awc") || !strcmp(cmd,"adrc_wc")
                        ? &s.control_bandwidth
                        : (!strcmp(cmd,"awo") || !strcmp(cmd,"adrc_wo")
@@ -1362,88 +1339,6 @@ void parseAndHandleCommand(char* line) {
     return;
   }
 
-  if (!strcmp(cmd,"autotune") || !strcmp(cmd,"aut") || !strcmp(cmd,"at")) {
-    printErrorAndPrompt("ERRO: autotune PID indisponivel no backend ADRC");
-    return;
-    if (!g_as5600.detected()) {
-      printErrorAndPrompt("ERRO: AS5600 nao detectado no I2C");
-      return;
-    }
-    if (g_position_servo.isActive()) {
-      printErrorAndPrompt("ERRO: aguarde o movimento atual terminar");
-      return;
-    }
-    if (g_autotune.active) {
-      printErrorAndPrompt("ERRO: autotune ja em andamento");
-      return;
-    }
-    setRepetitiveRunning(false);
-
-    char* step_token = nextArg();
-    char* rpm_token  = strtok_r(nullptr, " \t", &ctx);
-    float step_deg = 30.0f;
-    float rpm = g_default_move_max_rpm;
-
-    if (step_token) step_deg = clampf((float)atof(step_token), -180.0f, 180.0f);
-    if (rpm_token)  rpm      = clampf((float)atof(rpm_token), 1.0f, g_position_servo.settings().max_target_rpm);
-
-    if (fabsf(step_deg) < 1.0f) {
-      printErrorAndPrompt("ERRO: step deve ter modulo >= 1.0 deg");
-      return;
-    }
-
-    float current_deg = 0.0f;
-    if (!g_as5600.readAngleDeg(&current_deg)) {
-      printErrorAndPrompt("ERRO: falha ao ler AS5600");
-      return;
-    }
-
-    auto wrap360 = [](float deg) {
-      while (deg < 0.0f) deg += 360.0f;
-      while (deg >= 360.0f) deg -= 360.0f;
-      return deg;
-      
-    };
-
-    g_autotune.initial_deg = current_deg;
-    g_autotune.target_deg = wrap360(current_deg + step_deg);
-    g_autotune.test_rpm = rpm;
-    g_autotune.has_suggestion = false;
-    g_autotune.start_ms = millis();
-    g_autotune.active = true;
-
-    Serial.printf("AUTOTUNE: armado (ini=%.2f deg, alvo=%.2f deg, rpm=%.2f)\n",
-                  g_autotune.initial_deg, g_autotune.target_deg, rpm);
-    return;
-  }
-
-  if (!strcmp(cmd,"autotune_apply") || !strcmp(cmd,"autapply") || !strcmp(cmd,"ata")) {
-    printErrorAndPrompt("ERRO: autotune PID indisponivel no backend ADRC");
-    return;
-    if (g_autotune.active) {
-      printErrorAndPrompt("ERRO: aguarde o autotune terminar");
-      return;
-    }
-    if (!g_autotune.has_suggestion) {
-      printErrorAndPrompt("ERRO: sem sugestao. Execute autotune primeiro");
-      return;
-    }
-
-    CascadePositionSettings s = g_position_servo.settings();
-    s.pos_pid.kp = clampf(g_autotune.pos_kp, 0.01f, 10.0f);
-    s.pos_pid.ki = clampf(g_autotune.pos_ki, 0.0f, 5.0f);
-    s.pos_pid.kd = clampf(g_autotune.pos_kd, 0.0f, 5.0f);
-    s.vel_pid.kp = clampf(g_autotune.vel_kp, 0.1f, 50.0f);
-    s.vel_pid.ki = clampf(g_autotune.vel_ki, 0.0f, 20.0f);
-    s.vel_pid.kd = clampf(g_autotune.vel_kd, 0.0f, 10.0f);
-    g_position_servo.setSettings(s);
-
-    Serial.println("AUTOTUNE: sugestao aplicada");
-    Serial.printf("  POS: kp=%.3f ki=%.3f kd=%.3f\n", s.pos_pid.kp, s.pos_pid.ki, s.pos_pid.kd);
-    Serial.printf("  VEL: kp=%.3f ki=%.3f kd=%.3f\n", s.vel_pid.kp, s.vel_pid.ki, s.vel_pid.kd);
-    return;
-  }
-
   if (!strcmp(cmd,"q") || !strcmp(cmd,"goto") || !strcmp(cmd,"go")
       || !strcmp(cmd,"move") || !strcmp(cmd,"cw") || !strcmp(cmd,"ccw")) {
     if (!g_as5600.detected()) {
@@ -1461,12 +1356,12 @@ void parseAndHandleCommand(char* line) {
     }
 
     const float target_deg = (float)atof(deg_token);
-    const CascadePositionSettings& s = g_position_servo.settings();
+    const AdrcPositionSettings& s = g_position_servo.settings();
     float vmax_rpm = g_default_move_max_rpm;
-    CascadePositionController::MoveDirection direction = CascadePositionController::MoveDirection::Shortest;
+    AdrcPositionController::MoveDirection direction = AdrcPositionController::MoveDirection::Shortest;
 
-    if (!strcmp(cmd, "cw")) direction = CascadePositionController::MoveDirection::Clockwise;
-    if (!strcmp(cmd, "ccw")) direction = CascadePositionController::MoveDirection::CounterClockwise;
+    if (!strcmp(cmd, "cw")) direction = AdrcPositionController::MoveDirection::Clockwise;
+    if (!strcmp(cmd, "ccw")) direction = AdrcPositionController::MoveDirection::CounterClockwise;
 
     auto consumeToken = [&](char* token) {
       if (!token) return;
@@ -1490,8 +1385,8 @@ void parseAndHandleCommand(char* line) {
     g_move_done_reported = false;
     g_move_start_ms = millis();
     const char* direction_text =
-      direction == CascadePositionController::MoveDirection::Clockwise ? "cw" :
-      direction == CascadePositionController::MoveDirection::CounterClockwise ? "ccw" : "short";
+      direction == AdrcPositionController::MoveDirection::Clockwise ? "cw" :
+      direction == AdrcPositionController::MoveDirection::CounterClockwise ? "ccw" : "short";
     Serial.printf("OK: move alvo=%.2f deg  vmax=%.2f rpm  dir=%s\n", target_deg, vmax_rpm, direction_text);
     return;
   }
@@ -1511,7 +1406,7 @@ void parseAndHandleCommand(char* line) {
     }
 
     float delta_deg = (float)atof(delta_token);
-    const CascadePositionSettings& s = g_position_servo.settings();
+    const AdrcPositionSettings& s = g_position_servo.settings();
     float vmax_rpm = g_default_move_max_rpm;
 
     if (rpm_token) {
@@ -1530,9 +1425,9 @@ void parseAndHandleCommand(char* line) {
 
     // Delta positivo = CW (Clockwise), negativo = CCW (CounterClockwise)
     const float target_accumulated_deg = current_deg + delta_deg;
-    const CascadePositionController::MoveDirection direction =
-      delta_deg >= 0.0f ? CascadePositionController::MoveDirection::Clockwise
-                        : CascadePositionController::MoveDirection::CounterClockwise;
+    const AdrcPositionController::MoveDirection direction =
+      delta_deg >= 0.0f ? AdrcPositionController::MoveDirection::Clockwise
+                        : AdrcPositionController::MoveDirection::CounterClockwise;
 
     g_position_servo.startMove(target_accumulated_deg, vmax_rpm, direction);
     g_position_servo.primeAccumulatedAngle(current_deg);
@@ -1560,7 +1455,7 @@ void parseAndHandleCommand(char* line) {
     }
 
     float delta_deg = (float)atof(delta_token);
-    const CascadePositionSettings& s = g_position_servo.settings();
+    const AdrcPositionSettings& s = g_position_servo.settings();
     float vmax_rpm = g_default_move_max_rpm;
 
     if (rpm_token) {
@@ -1579,9 +1474,9 @@ void parseAndHandleCommand(char* line) {
 
     // Delta positivo = CCW (CounterClockwise), negativo = CW (Clockwise)
     const float target_accumulated_deg = current_deg - delta_deg;
-    const CascadePositionController::MoveDirection direction =
-      delta_deg >= 0.0f ? CascadePositionController::MoveDirection::CounterClockwise
-                        : CascadePositionController::MoveDirection::Clockwise;
+    const AdrcPositionController::MoveDirection direction =
+      delta_deg >= 0.0f ? AdrcPositionController::MoveDirection::CounterClockwise
+                        : AdrcPositionController::MoveDirection::Clockwise;
 
     g_position_servo.startMove(target_accumulated_deg, vmax_rpm, direction);
     g_position_servo.primeAccumulatedAngle(current_deg);
@@ -1596,100 +1491,7 @@ void parseAndHandleCommand(char* line) {
 
   if (!strcmp(cmd,"qc") || !strcmp(cmd,"cancelmove")) {
     setRepetitiveRunning(false);
-    g_autotune_abort_requested = g_autotune.active;
     Serial.println("OK: movimento/ciclo cancelado");
-    return;
-  }
-
-  if (!strcmp(cmd,"pp") || !strcmp(cmd,"pidpos_kp") ||
-      !strcmp(cmd,"pi") || !strcmp(cmd,"pidpos_ki") ||
-      !strcmp(cmd,"pd") || !strcmp(cmd,"pidpos_kd") ||
-      !strcmp(cmd,"vp") || !strcmp(cmd,"pidvel_kp") ||
-      !strcmp(cmd,"vi") || !strcmp(cmd,"pidvel_ki") ||
-      !strcmp(cmd,"vd") || !strcmp(cmd,"pidvel_kd")) {
-    printErrorAndPrompt("ERRO: comando PID obsoleto; use awc, awo ou ab0");
-    return;
-  }
-
-  // ── Blocos legados (inalcancaveis no backend ADRC) ─────────────────────
-
-  if (!strcmp(cmd,"pp") || !strcmp(cmd,"pidpos_kp")) {
-    char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
-    if (!val) {
-      Serial.printf("OK: pidpos_kp=%.3f\n", s.pos_pid.kp);
-      return;
-    }
-    s.pos_pid.kp = clampf((float)atof(val), 0.01f, 10.0f);
-    g_position_servo.setSettings(s);
-    Serial.printf("OK: pidpos_kp=%.3f\n", s.pos_pid.kp);
-    return;
-  }
-
-  if (!strcmp(cmd,"pi") || !strcmp(cmd,"pidpos_ki")) {
-    char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
-    if (!val) {
-      Serial.printf("OK: pidpos_ki=%.3f\n", s.pos_pid.ki);
-      return;
-    }
-    s.pos_pid.ki = clampf((float)atof(val), 0.0f, 5.0f);
-    g_position_servo.setSettings(s);
-    Serial.printf("OK: pidpos_ki=%.3f\n", s.pos_pid.ki);
-    return;
-  }
-
-  if (!strcmp(cmd,"pd") || !strcmp(cmd,"pidpos_kd")) {
-    char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
-    if (!val) {
-      Serial.printf("OK: pidpos_kd=%.3f\n", s.pos_pid.kd);
-      return;
-    }
-    s.pos_pid.kd = clampf((float)atof(val), 0.0f, 5.0f);
-    g_position_servo.setSettings(s);
-    Serial.printf("OK: pidpos_kd=%.3f\n", s.pos_pid.kd);
-    return;
-  }
-
-  // ── PID de velocidade ───────────────────────────────────────────────────
-
-  if (!strcmp(cmd,"vp") || !strcmp(cmd,"pidvel_kp")) {
-    char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
-    if (!val) {
-      Serial.printf("OK: pidvel_kp=%.3f\n", s.vel_pid.kp);
-      return;
-    }
-    s.vel_pid.kp = clampf((float)atof(val), 0.1f, 50.0f);
-    g_position_servo.setSettings(s);
-    Serial.printf("OK: pidvel_kp=%.3f\n", s.vel_pid.kp);
-    return;
-  }
-
-  if (!strcmp(cmd,"vi") || !strcmp(cmd,"pidvel_ki")) {
-    char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
-    if (!val) {
-      Serial.printf("OK: pidvel_ki=%.3f\n", s.vel_pid.ki);
-      return;
-    }
-    s.vel_pid.ki = clampf((float)atof(val), 0.0f, 20.0f);
-    g_position_servo.setSettings(s);
-    Serial.printf("OK: pidvel_ki=%.3f\n", s.vel_pid.ki);
-    return;
-  }
-
-  if (!strcmp(cmd,"vd") || !strcmp(cmd,"pidvel_kd")) {
-    char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
-    if (!val) {
-      Serial.printf("OK: pidvel_kd=%.3f\n", s.vel_pid.kd);
-      return;
-    }
-    s.vel_pid.kd = clampf((float)atof(val), 0.0f, 10.0f);
-    g_position_servo.setSettings(s);
-    Serial.printf("OK: pidvel_kd=%.3f\n", s.vel_pid.kd);
     return;
   }
 
@@ -1697,7 +1499,7 @@ void parseAndHandleCommand(char* line) {
 
   if (!strcmp(cmd,"pw") || !strcmp(cmd,"poswin")) {
     char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
+    AdrcPositionSettings s = g_position_servo.settings();
     if (!val) {
       Serial.printf("OK: poswin=%.2f\n", s.stop_window_deg);
       return;
@@ -1710,7 +1512,7 @@ void parseAndHandleCommand(char* line) {
 
   if (!strcmp(cmd,"ap") || !strcmp(cmd,"accel_pos")) {
     char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
+    AdrcPositionSettings s = g_position_servo.settings();
     if (!val) {
       Serial.printf("OK: accel_pos=%ums\n", s.accel_ramp_ms);
       return;
@@ -1723,7 +1525,7 @@ void parseAndHandleCommand(char* line) {
 
   if (!strcmp(cmd,"dp") || !strcmp(cmd,"decel_pos")) {
     char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
+    AdrcPositionSettings s = g_position_servo.settings();
     if (!val) {
       Serial.printf("OK: decel_pos=%ums\n", s.decel_ramp_ms);
       return;
@@ -1736,7 +1538,7 @@ void parseAndHandleCommand(char* line) {
 
   if (!strcmp(cmd,"kpp") || !strcmp(cmd,"kick_pwm") || !strcmp(cmd,"krp") || !strcmp(cmd,"kick_rpm")) {
     char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
+    AdrcPositionSettings s = g_position_servo.settings();
     if (!val) {
       Serial.printf("OK: kick_pwm=%.1f%%\n", s.kick_pwm_percent);
       return;
@@ -1749,7 +1551,7 @@ void parseAndHandleCommand(char* line) {
 
   if (!strcmp(cmd,"kms") || !strcmp(cmd,"kick_ms")) {
     char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
+    AdrcPositionSettings s = g_position_servo.settings();
     if (!val) {
       Serial.printf("OK: kick_ms=%ums\n", s.kick_ms);
       return;
@@ -1762,7 +1564,7 @@ void parseAndHandleCommand(char* line) {
 
   if (!strcmp(cmd,"sts") || !strcmp(cmd,"samples_to_stop")) {
     char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
+    AdrcPositionSettings s = g_position_servo.settings();
     if (!val) {
       Serial.printf("OK: samples_to_stop=%u\n", s.samples_to_stop);
       return;
@@ -1775,25 +1577,21 @@ void parseAndHandleCommand(char* line) {
 
   if (!strcmp(cmd,"mr") || !strcmp(cmd,"maxrpm")) {
     char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
+    AdrcPositionSettings s = g_position_servo.settings();
     if (!val) {
       Serial.printf("OK: maxrpm=%.2f\n", s.max_target_rpm);
       return;
     }
     const float new_max = clampf((float)atof(val), 1.0f, 200.0f);
     s.max_target_rpm = new_max;
-    // Mantem PID de posicao coerente com o teto maximo de RPM.
-    s.pos_pid.output_min = -new_max;
-    s.pos_pid.output_max = new_max;
     g_position_servo.setSettings(s);
-    Serial.printf("OK: maxrpm=%.2f  pidpos_out=[%.2f..%.2f]\n",
-                  s.max_target_rpm, s.pos_pid.output_min, s.pos_pid.output_max);
+    Serial.printf("OK: maxrpm=%.2f\n", s.max_target_rpm);
     return;
   }
 
   if (!strcmp(cmd,"drpm") || !strcmp(cmd,"default_rpm")) {
     char* val = nextArg();
-    const CascadePositionSettings& s = g_position_servo.settings();
+    const AdrcPositionSettings& s = g_position_servo.settings();
     if (!val) {
       Serial.printf("OK: default_rpm=%.2f\n", g_default_move_max_rpm);
       return;
@@ -1805,7 +1603,7 @@ void parseAndHandleCommand(char* line) {
 
   if (!strcmp(cmd,"pr") || !strcmp(cmd,"physrpm")) {
     char* val = nextArg();
-    CascadePositionSettings s = g_position_servo.settings();
+    AdrcPositionSettings s = g_position_servo.settings();
     if (!val) {
       Serial.printf("OK: physrpm=%.2f\n", s.physical_max_rpm);
       return;
@@ -1852,7 +1650,6 @@ void parseAndHandleCommand(char* line) {
 
   if (!strcmp(cmd,"stop") || !strcmp(cmd,"x")) {
     setRepetitiveRunning(false);
-    g_autotune_abort_requested = g_autotune.active;
     g_state.target_percent  = 0.0f;
     g_state.current_percent = 0.0f;
     g_state.drive_phase     = DrivePhase::IDLE;
@@ -2255,28 +2052,13 @@ void setup() {
   setPwmFrequencyHz(g_pwm_frequency_hz);
   configurePwmOutputs(g_pwm_frequency_hz, PWM_RESOLUTION_BITS);
 
-  CascadePositionSettings pos_settings;
+  AdrcPositionSettings pos_settings;
 
   // ADRC: valores iniciais extraidos do prototipo V2.5. A escala de b0 segue
   // PWM 8-bit internamente, embora a ponte H continue recebendo percentual.
   pos_settings.control_bandwidth = 30.0f;
   pos_settings.observer_bandwidth = 100.0f;
   pos_settings.plant_gain = 250.0f;
-  
-  // Campos legados sem efeito no backend ADRC.
-  pos_settings.pos_pid.kp = 0.75f;    // Mais firme para o motor lento fechar os ultimos graus
-  pos_settings.pos_pid.ki = 0.04f;    // Pequena integral para remover erro residual
-  pos_settings.pos_pid.kd = 0.04f;    // Amortecimento leve para nao frear demais
-  pos_settings.pos_pid.output_min = -DEFAULT_MAX_TARGET_RPM;
-  pos_settings.pos_pid.output_max = DEFAULT_MAX_TARGET_RPM;
-  
-  // Campos legados mantidos apenas para compatibilidade binaria/serial.
-  pos_settings.vel_pid.kp = 5.0f;
-  pos_settings.vel_pid.ki = 0.4f;
-  pos_settings.vel_pid.kd = 0.04f;
-  pos_settings.vel_pid.output_min = -100.0f;
-  pos_settings.vel_pid.output_max = 100.0f;
-  pos_settings.vel_pid.integral_max = 25.0f;
   
   pos_settings.max_target_rpm = DEFAULT_MAX_TARGET_RPM;
   pos_settings.physical_max_rpm = 3.0f;
@@ -2350,160 +2132,6 @@ void loop() {
   g_repetitive_motion.update(millis());
   updatePositionMoveControl();
   updateRampControl();
-
-  // ─── AUTOTUNE HANDLER ────────────────────────────────────────────────
-  if (g_autotune.active) {
-    static bool move_started = false;
-    static uint32_t move_start_ms = 0;
-    static float measured_deg[128];
-    static uint32_t measured_time[128];
-    static float measured_rpm_cmd[128];
-    static float measured_rpm_real[128];
-    static int sample_count = 0;
-
-    if (g_autotune_abort_requested) {
-      g_autotune_abort_requested = false;
-      g_autotune.active = false;
-      move_started = false;
-      sample_count = 0;
-      Serial.println("AUTOTUNE: cancelado");
-      g_serial_prompt_pending = true;
-      return;
-    }
-
-    float current_deg = 0.0f;
-    if (!g_as5600.readAngleDeg(&current_deg)) {
-      Serial.println("AUTOTUNE ERRO: falha ao ler AS5600");
-      g_autotune.active = false;
-      g_serial_prompt_pending = true;
-      move_started = false;
-      return;
-    }
-
-    if (!move_started) {
-      // Start the step move
-      g_position_servo.startMove(g_autotune.target_deg, g_autotune.test_rpm, CascadePositionController::MoveDirection::Shortest);
-      g_move_done_reported = false;
-      move_start_ms = millis();
-      sample_count = 0;
-      move_started = true;
-      Serial.printf("AUTOTUNE: step %.2f -> %.2f deg (rpm=%.2f)\n",
-                    g_autotune.initial_deg, g_autotune.target_deg, g_autotune.test_rpm);
-    } else {
-      // Record response every 10ms (up to 128 samples)
-      if (sample_count < 128) {
-        measured_deg[sample_count] = current_deg;
-        measured_time[sample_count] = millis() - move_start_ms;
-        measured_rpm_cmd[sample_count] = g_position_servo.commandedRpm();
-        measured_rpm_real[sample_count] = g_position_servo.measuredRpm();
-        sample_count++;
-      }
-      // When move is done, analyze response
-      if (!g_position_servo.isActive()) {
-        // Find step response characteristics
-        float step_size = g_autotune.target_deg - g_autotune.initial_deg;
-        float peak = g_autotune.initial_deg;
-        float peak_time = 0;
-        float settle_time = 0;
-        float overshoot = 0;
-        for (int i = 0; i < sample_count; ++i) {
-          float val = measured_deg[i];
-          if ((val - g_autotune.initial_deg) > (peak - g_autotune.initial_deg)) {
-            peak = val;
-            peak_time = measured_time[i];
-          }
-          // Settling: within 2% of step
-          if (settle_time == 0 && fabsf(val - g_autotune.target_deg) < fabsf(step_size) * 0.02f) {
-            settle_time = measured_time[i];
-          }
-        }
-        overshoot = peak - g_autotune.target_deg;
-        Serial.println("AUTOTUNE: resposta medida:");
-        Serial.printf("  Step: %.2f deg\n", step_size);
-        Serial.printf("  Pico: %.2f deg (%.0f ms)\n", peak, peak_time);
-        Serial.printf("  Overshoot: %.2f deg\n", overshoot);
-        Serial.printf("  Settling time: %.0f ms\n", settle_time);
-
-        float avg_abs_rpm_err = 0.0f;
-        float avg_abs_rpm_cmd = 0.0f;
-        float peak_rpm_err = 0.0f;
-        int rpm_samples = 0;
-        int rpm_sign_flips = 0;
-        int last_sign = 0;
-        for (int i = 0; i < sample_count; ++i) {
-          const float cmd_rpm = measured_rpm_cmd[i];
-          const float real_rpm = measured_rpm_real[i];
-          if (fabsf(cmd_rpm) < 0.5f) continue;
-          const float err = cmd_rpm - real_rpm;
-          const float abs_err = fabsf(err);
-          avg_abs_rpm_err += abs_err;
-          avg_abs_rpm_cmd += fabsf(cmd_rpm);
-          if (abs_err > peak_rpm_err) peak_rpm_err = abs_err;
-          const int sign = (err > 0.05f) ? 1 : ((err < -0.05f) ? -1 : 0);
-          if (sign != 0) {
-            if (last_sign != 0 && sign != last_sign) rpm_sign_flips++;
-            last_sign = sign;
-          }
-          rpm_samples++;
-        }
-        if (rpm_samples > 0) {
-          avg_abs_rpm_err /= (float)rpm_samples;
-          avg_abs_rpm_cmd /= (float)rpm_samples;
-        }
-
-        // Sugestão de PID (Ziegler-Nichols step response, simplificado)
-        float Kp = 0.0f, Ki = 0.0f, Kd = 0.0f;
-        if (settle_time > 0 && fabsf(step_size) > 1.0f && fabsf(overshoot) > 0.05f) {
-          float tau = settle_time / 1000.0f; // s
-          float Ku = fabsf(step_size) / fabsf(overshoot);
-          Kp = 0.6f * Ku;
-          Ki = 1.2f * Ku / tau;
-          Kd = 0.075f * Ku * tau;
-        } else {
-          Serial.println("AUTOTUNE: resposta sem overshoot suficiente para estimar ganhos por este metodo");
-        }
-        Serial.println("AUTOTUNE: sugestao PID POS (Ziegler-Nichols):");
-        Serial.printf("  Kp=%.3f  Ki=%.3f  Kd=%.3f\n", Kp, Ki, Kd);
-        Serial.println("Digite: pp <Kp>  pi <Ki>  pd <Kd> para aplicar.");
-
-        const CascadePositionSettings current_settings = g_position_servo.settings();
-        float vKp = current_settings.vel_pid.kp;
-        float vKi = current_settings.vel_pid.ki;
-        float vKd = current_settings.vel_pid.kd;
-        if (rpm_samples > 0 && avg_abs_rpm_cmd > 0.1f) {
-          float err_ratio = avg_abs_rpm_err / avg_abs_rpm_cmd;
-          vKp = clampf(vKp * (1.0f + 1.4f * err_ratio), 0.1f, 50.0f);
-          vKi = clampf(vKi * (1.0f + 0.8f * err_ratio), 0.0f, 20.0f);
-          vKd = clampf(vKd + 0.05f * peak_rpm_err, 0.0f, 10.0f);
-          if (rpm_sign_flips >= 4) {
-            // Oscilação detectada: reduz P/I e aumenta D para amortecer.
-            vKp = clampf(vKp * 0.8f, 0.1f, 50.0f);
-            vKi = clampf(vKi * 0.7f, 0.0f, 20.0f);
-            vKd = clampf(vKd * 1.25f, 0.0f, 10.0f);
-          }
-        }
-        Serial.println("AUTOTUNE: sugestao PID VEL (heuristica por erro de RPM):");
-        Serial.printf("  Kp=%.3f  Ki=%.3f  Kd=%.3f\n", vKp, vKi, vKd);
-        Serial.printf("  diagnostico: err_medio=%.2f rpm  err_pico=%.2f rpm  oscilacoes=%d\n",
-                      avg_abs_rpm_err, peak_rpm_err, rpm_sign_flips);
-        Serial.println("Digite: vp <Kp>  vi <Ki>  vd <Kd> para aplicar.");
-        Serial.println("Ou use: autotune_apply");
-
-        g_autotune.pos_kp = Kp;
-        g_autotune.pos_ki = Ki;
-        g_autotune.pos_kd = Kd;
-        g_autotune.vel_kp = vKp;
-        g_autotune.vel_ki = vKi;
-        g_autotune.vel_kd = vKd;
-        g_autotune.has_suggestion = true;
-
-        g_autotune.active = false;
-        g_serial_prompt_pending = true;
-        move_started = false;
-      }
-    }
-    return;
-  }
 
   if (!g_position_servo.isActive() && g_serial_prompt_pending && Serial.available() == 0) {
     printPrompt();

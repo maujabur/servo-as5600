@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 
-#include "SimplePID.h"
 #include "VelocityEstimator.h"
 
 struct AdrcPositionSettings {
@@ -26,10 +25,6 @@ struct AdrcPositionSettings {
   uint16_t stall_timeout_ms = 1500;
   float stall_velocity_deg_s = 2.0f;
 
-  // Mantidos temporariamente para os comandos seriais antigos compilarem.
-  // Nao participam do controle ADRC.
-  PIDSettings pos_pid;
-  PIDSettings vel_pid;
 };
 
 class AdrcPositionController {
@@ -97,8 +92,3 @@ class AdrcPositionController {
   uint32_t last_compute_ms_ = 0;
   uint32_t stall_started_ms_ = 0;
 };
-
-// Compatibilidade temporaria com a interface serial legada. O objeto criado e
-// o algoritmo executado sao ADRC; os aliases evitam acoplar a camada web.
-using CascadePositionSettings = AdrcPositionSettings;
-using CascadePositionController = AdrcPositionController;
