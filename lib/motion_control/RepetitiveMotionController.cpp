@@ -3,10 +3,11 @@
 RepetitiveMotionController::RepetitiveMotionController(const Commands& commands)
     : commands_(commands) {}
 
-void RepetitiveMotionController::beginMove(float target_deg, float rpm, Phase phase) {
+void RepetitiveMotionController::beginMove(float target_deg, float rpm,
+                                           Direction direction, Phase phase) {
   if (!commands_.start_move) return;
   phase_ = phase;
-  commands_.start_move(target_deg, rpm);
+  commands_.start_move(target_deg, rpm, direction);
 }
 
 void RepetitiveMotionController::setRunning(bool running, uint32_t now_ms) {
@@ -20,7 +21,8 @@ void RepetitiveMotionController::setRunning(bool running, uint32_t now_ms) {
   phase_started_ms_ = now_ms;
   // Ao habilitar, sincroniza primeiro no ponto inicial. Assim o primeiro ciclo
   // completo sempre respeita: pausa inicial -> ida -> pausa final -> volta.
-  beginMove(config_.start_deg, config_.end_to_start_rpm, Phase::TO_START);
+  beginMove(config_.start_deg, config_.end_to_start_rpm,
+            Direction::Decreasing, Phase::TO_START);
 }
 
 void RepetitiveMotionController::stop() {
@@ -42,7 +44,8 @@ void RepetitiveMotionController::update(uint32_t now_ms) {
 
     case Phase::DWELL_AT_END:
       if (now_ms - phase_started_ms_ >= config_.dwell_at_end_ms) {
-        beginMove(config_.start_deg, config_.end_to_start_rpm, Phase::TO_START);
+        beginMove(config_.start_deg, config_.end_to_start_rpm,
+                  Direction::Decreasing, Phase::TO_START);
       }
       break;
 
@@ -55,7 +58,8 @@ void RepetitiveMotionController::update(uint32_t now_ms) {
 
     case Phase::DWELL_AT_START:
       if (now_ms - phase_started_ms_ >= config_.dwell_at_start_ms) {
-        beginMove(config_.end_deg, config_.start_to_end_rpm, Phase::TO_END);
+        beginMove(config_.end_deg, config_.start_to_end_rpm,
+                  Direction::Increasing, Phase::TO_END);
       }
       break;
 

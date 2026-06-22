@@ -10,7 +10,7 @@ void AdrcPositionController::setSettings(const AdrcPositionSettings& settings) {
 
 void AdrcPositionController::startMove(float target_deg, float max_speed_rpm,
                                        MoveDirection direction) {
-  (void)direction; // Esta aplicacao usa exclusivamente o menor caminho 0..360.
+  direction_ = direction;
   target_deg_ = normalize360(target_deg);
   target_accumulated_deg_ = target_deg;
   max_speed_rpm_ = constrain(max_speed_rpm, 0.1f,
@@ -54,8 +54,20 @@ void AdrcPositionController::primeAccumulatedAngle(float current_deg) {
   current_accumulated_deg_ = normalized;
   last_current_deg_normalized_ = normalized;
   accumulated_initialized_ = true;
-  target_accumulated_deg_ = current_accumulated_deg_ +
-    shortestDelta(normalized, target_deg_);
+  float delta = normalize360(target_deg_) - normalized;
+  switch (direction_) {
+    case MoveDirection::Clockwise:
+      while (delta < 0.0f) delta += 360.0f;
+      break;
+    case MoveDirection::CounterClockwise:
+      while (delta > 0.0f) delta -= 360.0f;
+      break;
+    case MoveDirection::Shortest:
+    default:
+      delta = shortestDelta(normalized, target_deg_);
+      break;
+  }
+  target_accumulated_deg_ = current_accumulated_deg_ + delta;
   profiled_target_deg_ = current_accumulated_deg_;
   profile_velocity_deg_s_ = 0.0f;
   resetObserver(current_accumulated_deg_, millis());
@@ -184,7 +196,8 @@ float AdrcPositionController::computeOutputPercent(float current_deg,
       fabsf(velocity_estimator_.getRawRpm()) < 0.08f) {
     const float base_min_pwm = settings_.physical_max_rpm > 0.1f
       ? fabsf(commanded_rpm_) * 100.0f / settings_.physical_max_rpm : 18.0f;
-    const float min_pwm = constrain(base_min_pwm + 8.0f, 18.0f, 45.0f);
+    const float min_pwm = constrain(base_min_pwm + 8.0f,
+                                    settings_.minimum_drive_pwm_percent, 45.0f);
     if (fabsf(output_percent) < min_pwm) {
       output_percent = commanded_rpm_ >= 0.0f ? min_pwm : -min_pwm;
       output_pwm = output_percent * 2.55f;

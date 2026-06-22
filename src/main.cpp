@@ -116,8 +116,8 @@ struct MotorControlState {
   float threshold_stop  = 8.0f;    // abaixo disto considera parado (%)
 
   // Kick de partida / inversao
-  float    kick_pct = 85.0f;       // potencia do pulso (%)
-  uint16_t kick_ms  = 100;         // duracao (ms);  0 = desabilitado
+  float    kick_pct = 50.0f;       // potencia do pulso (%)
+  uint16_t kick_ms  = 50;         // duracao (ms);  0 = desabilitado
 
   // Freio eletrico
   uint16_t brake_ms = 200;         // duracao (ms);  0 = coast imediato
@@ -179,7 +179,8 @@ uint32_t                g_move_debug_last_print_ms = 0;
 
 // Adaptadores: a camada de movimento repetitivo conhece apenas estes comandos
 // genericos, sem depender do AS5600 ou do controlador ADRC concreto.
-void startAutomaticPositionMove(float target_deg, float rpm);
+void startAutomaticPositionMove(
+  float target_deg, float rpm, RepetitiveMotionController::Direction direction);
 bool isAutomaticPositionMoveActive();
 void stopAutomaticPositionMove();
 void applyMotorOutput(int16_t signed_pwm);
@@ -231,6 +232,16 @@ void loadRepetitiveMotionPreferences() {
     g_repetitive_preferences.getUInt("kick_ms", adrc.kick_ms), 0U, 1000U);
   adrc.samples_to_stop = (uint16_t)constrain(
     g_repetitive_preferences.getUInt("stop_samples", adrc.samples_to_stop), 1U, 20U);
+  adrc.minimum_drive_pwm_percent = clampf(g_repetitive_preferences.getFloat(
+    "min_pwm", adrc.minimum_drive_pwm_percent), 0.0f, 45.0f);
+  adrc.stall_timeout_ms = (uint16_t)constrain(
+    g_repetitive_preferences.getUInt("stall_ms", adrc.stall_timeout_ms), 100U, 10000U);
+  adrc.stall_velocity_deg_s = clampf(g_repetitive_preferences.getFloat(
+    "stall_vel", adrc.stall_velocity_deg_s), 0.1f, 20.0f);
+  adrc.velocity_window_ms = (uint16_t)constrain(
+    g_repetitive_preferences.getUInt("vel_win", adrc.velocity_window_ms), 20U, 1000U);
+  adrc.velocity_num_samples = (uint8_t)constrain(
+    g_repetitive_preferences.getUInt("vel_samples", adrc.velocity_num_samples), 2U, 20U);
   g_position_servo.setSettings(adrc);
   g_state.power_limit_percent = (uint8_t)constrain(
     g_repetitive_preferences.getUInt("power_limit", g_state.power_limit_percent), 0U, 100U);
@@ -289,6 +300,11 @@ void saveControlSettings() {
   g_repetitive_preferences.putFloat("kick_pct", s.kick_pwm_percent);
   g_repetitive_preferences.putUInt("kick_ms", s.kick_ms);
   g_repetitive_preferences.putUInt("stop_samples", s.samples_to_stop);
+  g_repetitive_preferences.putFloat("min_pwm", s.minimum_drive_pwm_percent);
+  g_repetitive_preferences.putUInt("stall_ms", s.stall_timeout_ms);
+  g_repetitive_preferences.putFloat("stall_vel", s.stall_velocity_deg_s);
+  g_repetitive_preferences.putUInt("vel_win", s.velocity_window_ms);
+  g_repetitive_preferences.putUInt("vel_samples", s.velocity_num_samples);
   g_repetitive_preferences.putUInt("power_limit", g_state.power_limit_percent);
   g_repetitive_preferences.putUInt("pwm_hz", g_pwm_frequency_hz);
 }
@@ -369,6 +385,11 @@ void sendWebSettings() {
   json += F(",\"decelMs\":"); json += String(s.decel_ramp_ms);
   json += F(",\"kickPct\":"); json += String(s.kick_pwm_percent, 1);
   json += F(",\"kickMs\":"); json += String(s.kick_ms);
+  json += F(",\"minPwm\":"); json += String(s.minimum_drive_pwm_percent, 1);
+  json += F(",\"stallMs\":"); json += String(s.stall_timeout_ms);
+  json += F(",\"stallVel\":"); json += String(s.stall_velocity_deg_s, 2);
+  json += F(",\"velWindow\":"); json += String(s.velocity_window_ms);
+  json += F(",\"velSamples\":"); json += String(s.velocity_num_samples);
   json += '}';
   g_web_server.send(200, "application/json", json);
 }
@@ -391,6 +412,7 @@ void setupWebControl() {
     }
     float wc, wo, b0, max_rpm, phys_rpm, power_limit, pwm_hz;
     float stop_window, stop_samples, accel_ms, decel_ms, kick_pct, kick_ms;
+    float min_pwm, stall_ms, stall_vel, vel_window, vel_samples;
     if (!parseWebNumber("wc", &wc) || !parseWebNumber("wo", &wo) ||
         !parseWebNumber("b0", &b0) || !parseWebNumber("maxRpm", &max_rpm) ||
         !parseWebNumber("physRpm", &phys_rpm) ||
@@ -401,7 +423,12 @@ void setupWebControl() {
         !parseWebNumber("accelMs", &accel_ms) ||
         !parseWebNumber("decelMs", &decel_ms) ||
         !parseWebNumber("kickPct", &kick_pct) ||
-        !parseWebNumber("kickMs", &kick_ms)) {
+        !parseWebNumber("kickMs", &kick_ms) ||
+        !parseWebNumber("minPwm", &min_pwm) ||
+        !parseWebNumber("stallMs", &stall_ms) ||
+        !parseWebNumber("stallVel", &stall_vel) ||
+        !parseWebNumber("velWindow", &vel_window) ||
+        !parseWebNumber("velSamples", &vel_samples)) {
       sendWebError(400, "Parametros invalidos ou incompletos");
       return;
     }
@@ -415,7 +442,12 @@ void setupWebControl() {
         accel_ms < 50.0f || accel_ms > 2000.0f ||
         decel_ms < 50.0f || decel_ms > 2000.0f ||
         kick_pct < 0.0f || kick_pct > 100.0f ||
-        kick_ms < 0.0f || kick_ms > 1000.0f) {
+        kick_ms < 0.0f || kick_ms > 1000.0f ||
+        min_pwm < 0.0f || min_pwm > 45.0f ||
+        stall_ms < 100.0f || stall_ms > 10000.0f ||
+        stall_vel < 0.1f || stall_vel > 20.0f ||
+        vel_window < 20.0f || vel_window > 1000.0f ||
+        vel_samples < 2.0f || vel_samples > 20.0f) {
       sendWebError(422, "Valor fora da faixa ou RPM maxima acima da RPM fisica");
       return;
     }
@@ -432,6 +464,11 @@ void setupWebControl() {
     s.decel_ramp_ms = (uint16_t)lroundf(decel_ms);
     s.kick_pwm_percent = kick_pct;
     s.kick_ms = (uint16_t)lroundf(kick_ms);
+    s.minimum_drive_pwm_percent = min_pwm;
+    s.stall_timeout_ms = (uint16_t)lroundf(stall_ms);
+    s.stall_velocity_deg_s = stall_vel;
+    s.velocity_window_ms = (uint16_t)lroundf(vel_window);
+    s.velocity_num_samples = (uint8_t)lroundf(vel_samples);
     g_position_servo.setSettings(s);
     g_state.power_limit_percent = (uint8_t)lroundf(power_limit);
     if (!setPwmFrequencyHz((uint32_t)lroundf(pwm_hz))) {
@@ -487,9 +524,11 @@ void setupWebControl() {
     g_adrc_stall_fault = false;
     const String target = g_web_server.arg("target");
     if (target == "start") {
-      startAutomaticPositionMove(c.start_deg, c.end_to_start_rpm);
+      startAutomaticPositionMove(c.start_deg, c.end_to_start_rpm,
+                                  RepetitiveMotionController::Direction::Decreasing);
     } else if (target == "end") {
-      startAutomaticPositionMove(c.end_deg, c.start_to_end_rpm);
+      startAutomaticPositionMove(c.end_deg, c.start_to_end_rpm,
+                                  RepetitiveMotionController::Direction::Increasing);
     } else {
       sendWebError(400, "Destino invalido");
       return;
@@ -985,7 +1024,8 @@ bool setupStationOrAccessPoint() {
   return setupOtaAccessPoint();
 }
 
-void startAutomaticPositionMove(float target_deg, float rpm) {
+void startAutomaticPositionMove(
+    float target_deg, float rpm, RepetitiveMotionController::Direction direction) {
   float current_deg = 0.0f;
   if (!g_as5600.detected() || !g_as5600.readAngleDeg(&current_deg)) {
     setRepetitiveRunning(false);
@@ -994,12 +1034,11 @@ void startAutomaticPositionMove(float target_deg, float rpm) {
   }
 
   const float limited_rpm = clampf(rpm, 0.1f, g_position_servo.settings().max_target_rpm);
-  // O servo trabalha internamente com angulo acumulado. Convertemos o ponto
-  // absoluto configurado para o equivalente mais proximo da posicao atual,
-  // inclusive quando o trajeto cruza 0/360 graus.
-  const float accumulated_target = current_deg + shortestAngleDeltaDeg(current_deg, target_deg);
-  g_position_servo.startMove(accumulated_target, limited_rpm,
-                             AdrcPositionController::MoveDirection::Shortest);
+  const AdrcPositionController::MoveDirection adrc_direction =
+    direction == RepetitiveMotionController::Direction::Increasing
+      ? AdrcPositionController::MoveDirection::Clockwise
+      : AdrcPositionController::MoveDirection::CounterClockwise;
+  g_position_servo.startMove(target_deg, limited_rpm, adrc_direction);
   g_position_servo.primeAccumulatedAngle(current_deg);
   g_move_done_reported = false;
   g_move_start_ms = millis();
@@ -2197,7 +2236,7 @@ void setup() {
   
   pos_settings.max_target_rpm = DEFAULT_MAX_TARGET_RPM;
   pos_settings.physical_max_rpm = 3.0f;
-  pos_settings.stop_window_deg = 1.2f;
+  pos_settings.stop_window_deg = 1.0f;
   pos_settings.accel_ramp_ms = 250;
   pos_settings.decel_ramp_ms = 220;
   pos_settings.kick_pwm_percent = 85.0f;
@@ -2255,23 +2294,17 @@ void setup() {
     }
   }
 
-  printHelp();
-  printStatus();
-  g_serial_prompt_pending = true;
+  Serial.println("Serial: comandos desativados; interface disponivel apenas via web");
+  g_serial_prompt_pending = false;
 }
 
 void loop() {
   handleOtaMaintenanceMode();
 
-  // A serial permanece responsiva durante o movimento: stop/run off/qc podem
-  // cancelar imediatamente qualquer comando em execucao.
-  processSerialInput();
+  // Mantem a serial exclusivamente para logs; qualquer entrada e descartada.
+  while (Serial.available() > 0) Serial.read();
   g_repetitive_motion.update(millis());
   updatePositionMoveControl();
   updateRampControl();
 
-  if (!g_position_servo.isActive() && g_serial_prompt_pending && Serial.available() == 0) {
-    printPrompt();
-    g_serial_prompt_pending = false;
-  }
 }

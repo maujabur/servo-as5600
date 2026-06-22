@@ -13,7 +13,9 @@ struct RepetitiveMotionConfig {
 
 class RepetitiveMotionController {
  public:
-  using StartMoveFn = void (*)(float target_deg, float rpm);
+  enum class Direction { Increasing, Decreasing };
+
+  using StartMoveFn = void (*)(float target_deg, float rpm, Direction direction);
   using IsMoveActiveFn = bool (*)();
   using StopMoveFn = void (*)();
 
@@ -39,7 +41,7 @@ class RepetitiveMotionController {
   const char* phaseText() const;
 
  private:
-  void beginMove(float target_deg, float rpm, Phase phase);
+  void beginMove(float target_deg, float rpm, Direction direction, Phase phase);
 
   Commands commands_;
   RepetitiveMotionConfig config_;

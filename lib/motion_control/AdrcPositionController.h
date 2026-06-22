@@ -21,6 +21,7 @@ struct AdrcPositionSettings {
   uint16_t samples_to_stop = 3;
   uint16_t velocity_window_ms = 220;
   uint8_t velocity_num_samples = 6;
+  float minimum_drive_pwm_percent = 18.0f;
 
   uint16_t stall_timeout_ms = 1500;
   float stall_velocity_deg_s = 2.0f;
@@ -72,6 +73,7 @@ class AdrcPositionController {
   bool observer_initialized_ = false;
 
   float target_deg_ = 0.0f;
+  MoveDirection direction_ = MoveDirection::Shortest;
   float target_accumulated_deg_ = 0.0f;
   float current_accumulated_deg_ = 0.0f;
   float last_current_deg_normalized_ = 0.0f;

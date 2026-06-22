@@ -22,6 +22,7 @@ static const char CONTROL_SETTINGS_WEB_PAGE[] PROGMEM = R"HTML(
 <div class="field"><label for="physRpm">RPM física estimada</label><div class="input"><input id="physRpm" type="number" min="0.1" max="10" step="0.1" required><span class="unit">RPM</span></div></div>
 <div class="field"><label for="powerLimit">Limite de potência</label><div class="input"><input id="powerLimit" type="number" min="0" max="100" step="1" required><span class="unit">%</span></div></div>
 <div class="field"><label for="pwmHz">Frequência PWM</label><div class="input"><input id="pwmHz" type="number" min="500" max="20000" step="100" required><span class="unit">Hz</span></div></div>
+<div class="field"><label for="minPwm">PWM mínimo em movimento</label><div class="input"><input id="minPwm" type="number" min="0" max="45" step="1" required><span class="unit">%</span></div><div class="hint">Piso do anti-stall; máximo 45%</div></div>
 </div></section>
 <section><h2>Perfil e chegada</h2><div class="grid">
 <div class="field"><label for="stopWindow">Janela de chegada</label><div class="input"><input id="stopWindow" type="number" min="0.2" max="20" step="0.1" required><span class="unit">°</span></div></div>
@@ -33,10 +34,18 @@ static const char CONTROL_SETTINGS_WEB_PAGE[] PROGMEM = R"HTML(
 <div class="field"><label for="kickPct">Potência do kick</label><div class="input"><input id="kickPct" type="number" min="0" max="100" step="1" required><span class="unit">%</span></div></div>
 <div class="field"><label for="kickMs">Duração do kick</label><div class="input"><input id="kickMs" type="number" min="0" max="1000" step="10" required><span class="unit">ms</span></div></div>
 </div></section>
+<section><h2>Proteção de stall</h2><div class="grid">
+<div class="field"><label for="stallMs">Tempo para detectar</label><div class="input"><input id="stallMs" type="number" min="100" max="10000" step="100" required><span class="unit">ms</span></div></div>
+<div class="field"><label for="stallVel">Velocidade considerada parada</label><div class="input"><input id="stallVel" type="number" min="0.1" max="20" step="0.1" required><span class="unit">°/s</span></div></div>
+</div></section>
+<section><h2>Estimador de velocidade</h2><div class="grid">
+<div class="field"><label for="velWindow">Janela de medição</label><div class="input"><input id="velWindow" type="number" min="20" max="1000" step="10" required><span class="unit">ms</span></div></div>
+<div class="field"><label for="velSamples">Número de amostras</label><div class="input"><input id="velSamples" type="number" min="2" max="20" step="1" required><span class="unit">N</span></div></div>
+</div></section>
 <div class="actions"><button class="save" id="save" type="submit">SALVAR AJUSTES</button><div class="message" id="message">Carregando configuração…</div></div>
 </form></main>
 <script>
-const ids=['wc','wo','b0','maxRpm','physRpm','powerLimit','pwmHz','stopWindow','stopSamples','accelMs','decelMs','kickPct','kickMs'];const $=id=>document.getElementById(id);
+const ids=['wc','wo','b0','maxRpm','physRpm','powerLimit','pwmHz','minPwm','stopWindow','stopSamples','accelMs','decelMs','kickPct','kickMs','stallMs','stallVel','velWindow','velSamples'];const $=id=>document.getElementById(id);
 async function api(body){let o={method:body?'POST':'GET'};if(body){o.headers={'Content-Type':'application/x-www-form-urlencoded'};o.body=new URLSearchParams(body)}let r=await fetch('/api/settings',o),j=await r.json();if(!r.ok)throw Error(j.error||'Falha na operação');return j}
 function msg(t,e=false){$('message').textContent=t;$('message').className='message'+(e?' error':'')}
 function render(s){ids.forEach(id=>$(id).value=s[id]);$('save').disabled=!s.canEdit;document.querySelector('.online').textContent=s.canEdit?'MOTOR PARADO':'AJUSTES BLOQUEADOS'}
