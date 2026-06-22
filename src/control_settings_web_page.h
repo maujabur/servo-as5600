@@ -47,7 +47,8 @@ static const char CONTROL_SETTINGS_WEB_PAGE[] PROGMEM = R"HTML(
 <script>
 const ids=['wc','wo','b0','maxRpm','physRpm','powerLimit','pwmHz','minPwm','stopWindow','stopSamples','accelMs','decelMs','kickPct','kickMs','stallMs','stallVel','velWindow','velSamples'];const $=id=>document.getElementById(id);
 async function api(body){let o={method:body?'POST':'GET'};if(body){o.headers={'Content-Type':'application/x-www-form-urlencoded'};o.body=new URLSearchParams(body)}let r=await fetch('/api/settings',o),j=await r.json();if(!r.ok)throw Error(j.error||'Falha na operação');return j}
-function msg(t,e=false){$('message').textContent=t;$('message').className='message'+(e?' error':'')}
+let messageTimer;
+function msg(t,e=false){clearTimeout(messageTimer);const el=$('message');el.textContent=t;el.className='message'+(e?' error':'');if(t)messageTimer=setTimeout(()=>{el.textContent='';el.className='message'},5000)}
 function render(s){ids.forEach(id=>$(id).value=s[id]);$('save').disabled=!s.canEdit;document.querySelector('.online').textContent=s.canEdit?'MOTOR PARADO':'AJUSTES BLOQUEADOS'}
 async function load(){try{render(await api());msg('Configuração persistente carregada')}catch(e){msg(e.message,true)}}
 $('form').onsubmit=async e=>{e.preventDefault();let b={};ids.forEach(id=>b[id]=$(id).value);try{render(await api(b));msg('Ajustes salvos e aplicados')}catch(x){msg(x.message,true)}};load();

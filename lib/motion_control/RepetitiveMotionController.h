@@ -5,10 +5,10 @@
 struct RepetitiveMotionConfig {
   float start_deg = 0.0f;
   float end_deg = 180.0f;
-  float start_to_end_rpm = 1.8f;
-  float end_to_start_rpm = 1.8f;
+  float start_to_end_rpm = 1.0f;
+  float end_to_start_rpm = 1.0f;
   uint32_t dwell_at_start_ms = 1000;
-  uint32_t dwell_at_end_ms = 1000;
+  uint32_t dwell_at_end_ms = 2000;
 };
 
 class RepetitiveMotionController {

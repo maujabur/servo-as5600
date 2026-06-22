@@ -6,8 +6,8 @@
 
 struct AdrcPositionSettings {
   // Ganhos ADRC. b0 usa a mesma unidade do exemplo original: PWM 8-bit.
-  float control_bandwidth = 30.0f;   // wc
-  float observer_bandwidth = 100.0f; // wo
+  float control_bandwidth = 25.0f;   // wc
+  float observer_bandwidth = 80.0f;  // wo
   float plant_gain = 250.0f;         // b0
 
   float max_target_rpm = 2.4f;
@@ -19,9 +19,9 @@ struct AdrcPositionSettings {
   float kick_pwm_percent = 85.0f;
   uint16_t kick_ms = 180;
   uint16_t samples_to_stop = 3;
-  uint16_t velocity_window_ms = 220;
-  uint8_t velocity_num_samples = 6;
-  float minimum_drive_pwm_percent = 18.0f;
+  uint16_t velocity_window_ms = 400;
+  uint8_t velocity_num_samples = 8;
+  float minimum_drive_pwm_percent = 24.0f;
 
   uint16_t stall_timeout_ms = 1500;
   float stall_velocity_deg_s = 2.0f;
@@ -64,7 +64,7 @@ class AdrcPositionController {
   void resetObserver(float position_deg, uint32_t now_ms);
 
   AdrcPositionSettings settings_;
-  VelocityEstimator velocity_estimator_{220, 6};
+  VelocityEstimator velocity_estimator_{400, 8};
 
   bool active_ = false;
   bool kicking_ = false;

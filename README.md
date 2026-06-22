@@ -159,20 +159,22 @@ O ambiente requer o PlatformIO Core gerenciado pelo VS Code, normalmente em:
 
 | Ajuste | Valor |
 |---|---:|
-| RPM padrão de movimento | 1,8 RPM |
+| RPM padrão de ida/volta | 1,0 RPM |
+| Pausa no início | 1000 ms |
+| Pausa no fim | 2000 ms |
 | RPM máxima | 2,4 RPM |
 | RPM física estimada | 3,0 RPM |
-| ADRC `wc` | 30 |
-| ADRC `wo` | 100 |
+| ADRC `wc` | 25 |
+| ADRC `wo` | 80 |
 | ADRC `b0` | 250 |
 | Janela de chegada | 1,0° |
 | Aceleração | 250 ms |
 | Desaceleração | 220 ms |
 | Kick | 85% / 180 ms |
-| PWM mínimo | 18% |
+| PWM mínimo | 24% |
 | PWM carrier | 500 Hz / 8 bits |
 | Stall | 2°/s por 1500 ms |
-| Estimador de velocidade | 220 ms / 6 amostras |
+| Estimador de velocidade | 400 ms / 8 amostras |
 
 Valores já gravados na NVS têm prioridade sobre esses defaults.
 

@@ -2230,8 +2230,8 @@ void setup() {
 
   // ADRC: valores iniciais extraidos do prototipo V2.5. A escala de b0 segue
   // PWM 8-bit internamente, embora a ponte H continue recebendo percentual.
-  pos_settings.control_bandwidth = 30.0f;
-  pos_settings.observer_bandwidth = 100.0f;
+  pos_settings.control_bandwidth = 25.0f;
+  pos_settings.observer_bandwidth = 80.0f;
   pos_settings.plant_gain = 250.0f;
   
   pos_settings.max_target_rpm = DEFAULT_MAX_TARGET_RPM;
@@ -2242,8 +2242,9 @@ void setup() {
   pos_settings.kick_pwm_percent = 85.0f;
   pos_settings.kick_ms = 180;
   pos_settings.samples_to_stop = 3;
-  pos_settings.velocity_window_ms = 220;  // Menos atraso na leitura de rpm para encerrar a parada antes
-  pos_settings.velocity_num_samples = 6;
+  pos_settings.velocity_window_ms = 400;
+  pos_settings.velocity_num_samples = 8;
+  pos_settings.minimum_drive_pwm_percent = 24.0f;
   
   g_position_servo.setSettings(pos_settings);
   loadRepetitiveMotionPreferences();
