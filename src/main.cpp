@@ -33,7 +33,7 @@ static_assert(MOTOR_CONTROL_UNIT >= 1 && MOTOR_CONTROL_UNIT <= 99,
 
 constexpr uint8_t MOTOR_CONTROL_UNIT_NUMBER = MOTOR_CONTROL_UNIT;
 char OTA_AP_SSID[20] = {0};
-constexpr char OTA_AP_PASSWORD[] = "12345678";
+constexpr char OTA_AP_PASSWORD[] = "+5511981550110";
 char OTA_HOSTNAME[28] = {0};
 constexpr char OTA_PASSWORD[]    = "as5600-update";
 constexpr uint32_t WIFI_STA_CONNECT_TIMEOUT_MS = 12000;
